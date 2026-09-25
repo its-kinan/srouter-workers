@@ -69,11 +69,13 @@ def main():
     # 1. inline dashboard shell
     subprocess.run(["node", "scripts/inline-dashboard.mjs"], cwd=ROOT, check=True)
 
-    # 2. bundle
+    # 2. bundle (node: builtins are external — the Workers runtime provides
+    #    them via the nodejs_compat compatibility flag, same as wrangler does)
     worker_js = os.path.join(ROOT, "worker.mjs")
     subprocess.run([
         ESBUILD, "src/index.ts", "--bundle", "--format=esm",
         "--platform=browser", "--target=es2022", "--minify",
+        "--external:node:*",
         f"--outfile={worker_js}",
     ], cwd=ROOT, check=True)
     size = os.path.getsize(worker_js)
