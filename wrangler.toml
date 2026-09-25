@@ -17,7 +17,7 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "srouter-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "33de2eec-bd48-4bae-a491-65f2bba1c0f9"
 migrations_dir = "src/db/migrations"
 
 # --- R2: log archive / config snapshots (Phase 2+) ---
