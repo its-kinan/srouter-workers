@@ -57,7 +57,8 @@ export async function verifyAdminSession(
     return true;
 }
 
-function issueSessionCookie(c: Parameters<typeof setCookie>[0], token: string, env: Env): void {
+/** Issue a new admin session + cookie. Exported for the /v1/admin/* routes. */
+export function issueSessionCookie(c: Parameters<typeof setCookie>[0], token: string, env: Env): void {
     setCookie(c, ADMIN_SESSION_COOKIE, token, {
         httpOnly: true,
         sameSite: "Lax",

@@ -14,7 +14,7 @@
   "scripts": {
     "db:migrate": "wrangler d1 migrations apply srouter-db",
     "deploy": "wrangler deploy",
-    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/test/phase1.test.js",
+    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/test/phase1.test.js .test-build/test/dashboard.test.js",
     "typecheck": "tsc --noEmit",
     "predeploy": "node scripts/inline-dashboard.mjs",
     "pretest": "node scripts/inline-dashboard.mjs"
