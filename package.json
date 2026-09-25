@@ -1,0 +1,22 @@
+{
+  "dependencies": {
+    "hono": "^4.13.9",
+    "zod": "^4.6.5"
+  },
+  "description": "SRouter ported to Cloudflare Workers (Worker + D1 + Durable Object + R2)",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260925.1",
+    "@types/node": "^22.20.4",
+    "typescript": "5.9"
+  },
+  "license": "MIT",
+  "name": "srouter-workers",
+  "scripts": {
+    "db:migrate": "wrangler d1 migrations apply srouter-db",
+    "deploy": "wrangler deploy",
+    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/test/phase1.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}

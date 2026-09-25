@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>srouter-workers — Phase 1</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }
+  main { max-width: 720px; margin: 0 auto; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 0; }
+  input, button { font-size: 1rem; padding: .5rem .75rem; border-radius: 6px; border: 1px solid #30363d; }
+  input { background: #0d1117; color: #e6edf3; width: 100%; box-sizing: border-box; margin-bottom: .5rem; }
+  button { background: #1f6feb; color: #fff; border: none; cursor: pointer; }
+  button:hover { background: #388bfd; }
+  .badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .8rem; }
+  .ok { background: #1a7f37; } .warn { background: #9e6a03; }
+  .phase { background: #6e40c9; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #30363d; }
+  #err { color: #f85149; }
+</style>
+</head>
+<body>
+<main>
+  <h1>srouter-workers <span class="badge phase">Phase 1</span></h1>
+  <p>Cloudflare Workers port of SRouter. Minimal admin shell — the full dashboard arrives in a later phase.</p>
+
+  <div class="card" id="setup-card" hidden>
+    <h2>First-run setup</h2>
+    <p>No admin account exists yet. Create one:</p>
+    <input id="setup-pass" type="password" placeholder="Admin password (min 8 chars)" autocomplete="new-password">
+    <button id="setup-btn">Create admin account</button>
+  </div>
+
+  <div class="card" id="login-card" hidden>
+    <h2>Admin login</h2>
+    <input id="login-pass" type="password" placeholder="Admin password" autocomplete="current-password">
+    <button id="login-btn">Log in</button>
+    <p id="err"></p>
+  </div>
+
+  <div class="card" id="status-card" hidden>
+    <h2>Status <span id="health-badge" class="badge ok">healthy</span></h2>
+    <h3>Providers</h3>
+    <table><thead><tr><th>ID</th><th>Type</th><th>Enabled</th></tr></thead><tbody id="providers"></tbody></table>
+    <h3>Virtual API keys</h3>
+    <table><thead><tr><th>Name</th><th>Enabled</th><th>Tokens used</th><th>Cost used</th></tr></thead><tbody id="keys"></tbody></table>
+    <h3>Circuit breaker</h3>
+    <pre id="circuit" style="font-size:.8rem;overflow:auto"></pre>
+    <p><button id="logout-btn">Log out</button></p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const err = (m) => { $("err").textContent = m; };
+
+async function status() {
+  const r = await fetch("/api/admin/status");
+  return r.json();
+}
+async function summary() {
+  const r = await fetch("/api/admin/summary");
+  if (!r.ok) return null;
+  return r.json();
+}
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function boot() {
+  const { initialized } = await status();
+  if (!initialized) { $("setup-card").hidden = false; return; }
+  const s = await summary();
+  if (!s) { $("login-card").hidden = false; return; }
+  $("status-card").hidden = false;
+  $("providers").innerHTML = s.providers.map((p) =>
+    `<tr><td>${esc(p.id)}</td><td>${esc(p.provider_id)}</td><td>${p.enabled ? "yes" : "no"}</td></tr>`).join("") || "<tr><td colspan=3>No providers configured</td></tr>";
+  $("keys").innerHTML = s.apiKeys.map((k) =>
+    `<tr><td>${esc(k.name)}</td><td>${k.enabled ? "yes" : "no"}</td><td>${esc(k.usage_tokens)}</td><td>$${esc(k.usage_cost)}</td></tr>`).join("") || "<tr><td colspan=4>No virtual keys</td></tr>";
+  $("circuit").textContent = JSON.stringify(s.routerHealth?.states ?? {}, null, 1);
+}
+
+$("setup-btn").onclick = async () => {
+  err("");
+  const password = $("setup-pass").value;
+  const r = await fetch("/api/admin/setup", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ password }) });
+  if (!r.ok) { err("Setup failed: " + (await r.text())); return; }
+  location.reload();
+};
+$("login-btn").onclick = async () => {
+  err("");
+  const password = $("login-pass").value;
+  const r = await fetch("/api/admin/login", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ password }) });
+  if (!r.ok) { err("Invalid password"); return; }
+  location.reload();
+};
+$("logout-btn").onclick = async () => {
+  await fetch("/api/admin/logout", { method: "POST" });
+  location.reload();
+};
+boot();
+</script>
+</body>
+</html>

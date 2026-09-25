@@ -1,0 +1,1 @@
+{"compilerOptions":{"allowImportingTsExtensions":false,"module":"NodeNext","moduleResolution":"NodeNext","noEmit":false,"outDir":".test-build","rootDir":"."},"extends":"./tsconfig.json","include":["src/**/*.ts","test/**/*.ts"]}
