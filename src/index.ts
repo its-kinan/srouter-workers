@@ -16,6 +16,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { RouterState } from "./router/durable.js";
 import { decryptAccount, type ProviderRow } from "./providers/registry.js";
 import { refreshOAuthTokens } from "./providers/oauth-refresh.js";
+import { DASHBOARD_HTML } from "./dashboard-html.js";
 import { encryptSecretsObject } from "./crypto/secretbox.js";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -31,7 +32,13 @@ app.notFound((c) => {
     if (c.req.path.startsWith("/v1/") || c.req.path.startsWith("/api/")) {
         return c.json({ error: { message: "Not found", type: "invalid_request_error" } }, 404);
     }
-    return c.env.ASSETS.fetch(c.req.raw);
+    // Phase 1: dashboard shell is inlined into the bundle (see
+    // scripts/inline-dashboard.mjs) with the correct content type, so browsers
+    // render it instead of downloading it.
+    return new Response(DASHBOARD_HTML, {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" }
+    });
 });
 
 async function refreshOAuthAccount(
