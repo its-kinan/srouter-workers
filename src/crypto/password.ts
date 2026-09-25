@@ -4,7 +4,10 @@
 // (the setup endpoint creates the account when none exists).
 // Stored format: "pbkdf2$<iterations>$<salt_b64>$<hash_b64>"
 
-const ITERATIONS = 210_000;
+// Cloudflare Workers' WebCrypto caps PBKDF2 at 100,000 iterations
+// (NotSupportedError above that). Stored format encodes the count,
+// so verifyPassword accepts any value.
+const ITERATIONS = 100_000;
 const SALT_BYTES = 16;
 const HASH_BYTES = 32;
 

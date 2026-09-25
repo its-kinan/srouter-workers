@@ -85,6 +85,12 @@ describe("admin password (PBKDF2-SHA256)", () => {
         assert.notEqual(a, b);
     });
 
+    it("stays within the Workers PBKDF2 iteration cap (100000)", async () => {
+        const hash = await hashPassword("cap-check");
+        const iterations = parseInt(hash.split("$")[1]!, 10);
+        assert.ok(iterations <= 100_000, `iterations=${iterations} exceeds Workers cap`);
+    });
+
     it("rejects garbage stored hashes", async () => {
         assert.equal(await verifyPassword("x", "not-a-hash"), false);
         assert.equal(await verifyPassword("x", "pbkdf2$abc$def$ghi"), false);

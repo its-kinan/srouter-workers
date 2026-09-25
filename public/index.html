@@ -3,99 +3,647 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>srouter-workers — Phase 1</title>
+<title>SRouter</title>
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }
-  main { max-width: 720px; margin: 0 auto; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
-  h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 0; }
-  input, button { font-size: 1rem; padding: .5rem .75rem; border-radius: 6px; border: 1px solid #30363d; }
-  input { background: #0d1117; color: #e6edf3; width: 100%; box-sizing: border-box; margin-bottom: .5rem; }
-  button { background: #1f6feb; color: #fff; border: none; cursor: pointer; }
-  button:hover { background: #388bfd; }
-  .badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .8rem; }
-  .ok { background: #1a7f37; } .warn { background: #9e6a03; }
-  .phase { background: #6e40c9; }
-  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #30363d; }
-  #err { color: #f85149; }
+  :root {
+    --canvas: #141414;
+    --canvas-soft: #1e1e1e;
+    --field: #262626;
+    --hairline: #333333;
+    --hairline-soft: #262626;
+    --ink: #ffffff;
+    --ink-soft: #e5e5e5;
+    --muted: #8a8a8a;
+    --faint: #5a5a5a;
+    --accent: #3385ff;
+    --accent-dim: rgba(51, 133, 255, 0.14);
+    --destructive: #f87171;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: var(--font); letter-spacing: -0.011em; font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 { letter-spacing: -0.02em; line-height: 1.15; margin: 0; }
+  a { color: var(--accent); text-decoration: none; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+
+  /* ---------- auth ---------- */
+  #auth-view {
+    min-height: 100%; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .auth-card {
+    width: 100%; max-width: 380px; background: var(--canvas);
+    border: 1px solid var(--hairline); border-radius: 12px; padding: 32px 28px;
+  }
+  .auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 8px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; color: #fff;
+  }
+  .brand-name { font-size: 17px; font-weight: 650; }
+  .brand-tag {
+    font-size: 10.5px; color: var(--muted); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 2px 8px; margin-left: 2px;
+  }
+  .auth-card h2 { font-size: 19px; margin-bottom: 6px; }
+  .auth-card .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  label.field-label {
+    display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 6px;
+  }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%; background: var(--field); border: 1px solid var(--hairline);
+    color: var(--ink); border-radius: 8px; padding: 9px 12px; font-size: 14px;
+    font-family: var(--font); outline: none; margin-bottom: 12px;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--ink); color: #141414; border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    font-family: var(--font); letter-spacing: -0.011em;
+  }
+  .btn:hover { background: var(--ink-soft); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-block { width: 100%; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-accent:hover { background: #4a94ff; }
+  .btn-ghost {
+    background: transparent; color: var(--ink-soft);
+    border: 1px solid var(--hairline);
+  }
+  .btn-ghost:hover { background: var(--canvas-soft); }
+  .btn-danger { background: transparent; color: var(--destructive); border: 1px solid var(--hairline); }
+  .btn-danger:hover { background: rgba(248, 113, 113, 0.08); }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; border-radius: 7px; }
+  .form-error {
+    color: var(--destructive); font-size: 13px; margin: 10px 0 0;
+    min-height: 18px; word-break: break-word;
+  }
+  .form-ok { color: var(--ok); font-size: 13px; margin: 10px 0 0; }
+
+  /* ---------- shell ---------- */
+  #main-view { display: flex; min-height: 100%; }
+  #sidebar {
+    width: 248px; flex-shrink: 0; border-right: 1px solid var(--hairline-soft);
+    background: var(--canvas); padding: 20px 12px; display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .nav-group-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); padding: 14px 12px 6px; font-weight: 600;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: 8px; color: var(--muted); font-size: 13.5px; font-weight: 500;
+    cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+    font-family: var(--font);
+  }
+  .nav-item:hover { background: var(--canvas-soft); color: var(--ink); }
+  .nav-item.active { background: var(--canvas-soft); color: var(--ink); }
+  .nav-item .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex-shrink: 0;
+  }
+  .nav-item.active .dot { background: var(--accent); }
+  #sidebar .spacer { flex: 1; }
+  .sidebar-foot {
+    border-top: 1px solid var(--hairline-soft); padding-top: 12px; margin-top: 8px;
+  }
+  .version-line { font-size: 11.5px; color: var(--faint); padding: 4px 12px; }
+
+  #content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #topbar {
+    border-bottom: 1px solid var(--hairline-soft); padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; background: var(--canvas); z-index: 5;
+  }
+  #topbar h1 { font-size: 20px; font-weight: 650; }
+  #page { padding: 28px 32px 64px; max-width: 1180px; width: 100%; margin: 0 auto; }
+
+  .card {
+    background: var(--canvas); border: 1px solid var(--hairline-soft);
+    border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  }
+  .card h3 { font-size: 14.5px; font-weight: 650; margin-bottom: 4px; }
+  .card .card-sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat {
+    border: 1px solid var(--hairline-soft); border-radius: 12px; padding: 16px 18px;
+    background: var(--canvas);
+  }
+  .stat .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat .stat-value { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
+  .stat .stat-hint { font-size: 12px; color: var(--faint); margin-top: 4px; }
+
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tbl th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--faint); font-weight: 600; padding: 8px 12px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--hairline-soft); vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550;
+    border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px;
+    color: var(--ink-soft); white-space: nowrap;
+  }
+  .pill .pdot { width: 6px; height: 6px; border-radius: 50%; }
+  .pill-on { color: var(--ok); } .pill-on .pdot { background: var(--ok); }
+  .pill-off { color: var(--muted); } .pill-off .pdot { background: var(--faint); }
+  .pill-err { color: var(--destructive); } .pill-err .pdot { background: var(--destructive); }
+  .pill-type { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+
+  .row-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .page-head h2 { font-size: 22px; font-weight: 650; }
+  .page-head p { color: var(--muted); font-size: 13.5px; margin: 4px 0 0; }
+
+  .empty {
+    text-align: center; padding: 56px 24px; color: var(--muted);
+    border: 1px dashed var(--hairline); border-radius: 12px;
+  }
+  .empty h3 { color: var(--ink); font-size: 15px; margin-bottom: 8px; }
+  .empty p { font-size: 13.5px; max-width: 460px; margin: 0 auto 4px; }
+  .phase-badge {
+    display: inline-block; font-size: 11px; font-weight: 650; color: var(--accent);
+    background: var(--accent-dim); border-radius: 999px; padding: 3px 10px; margin-bottom: 12px;
+  }
+
+  .key-secret-box {
+    background: var(--field); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 12px 14px; display: flex; align-items: center; gap: 12px; margin: 12px 0;
+  }
+  .key-secret-box code {
+    font-family: var(--mono); font-size: 13px; word-break: break-all; flex: 1; color: var(--ink);
+  }
+  .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 13.5px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+
+  .inline-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .inline-form .full { grid-column: 1 / -1; }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(16px);
+    background: var(--ink); color: #141414; font-size: 13.5px; font-weight: 550;
+    padding: 10px 18px; border-radius: 10px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s; z-index: 50;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 900px) {
+    #sidebar { display: none; }
+    #page { padding: 20px 16px 64px; }
+    #topbar { padding: 14px 16px; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>srouter-workers <span class="badge phase">Phase 1</span></h1>
-  <p>Cloudflare Workers port of SRouter. Minimal admin shell — the full dashboard arrives in a later phase.</p>
-
-  <div class="card" id="setup-card" hidden>
-    <h2>First-run setup</h2>
-    <p>No admin account exists yet. Create one:</p>
-    <input id="setup-pass" type="password" placeholder="Admin password (min 8 chars)" autocomplete="new-password">
-    <button id="setup-btn">Create admin account</button>
+<div id="app">
+  <!-- ============ AUTH ============ -->
+  <div id="auth-view" hidden>
+    <div class="auth-card" id="setup-card" hidden>
+      <div class="auth-brand">
+        <div class="brand-mark">S</div>
+        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+      </div>
+      <h2>First-run setup</h2>
+      <p class="sub">No admin account exists yet. Create one to continue.</p>
+      <label class="field-label" for="setup-pass">Admin password</label>
+      <input id="setup-pass" type="password" placeholder="Minimum 8 characters" autocomplete="new-password">
+      <button class="btn btn-accent btn-block" id="setup-btn">Create admin account</button>
+      <p class="form-error" id="setup-err"></p>
+    </div>
+    <div class="auth-card" id="login-card" hidden>
+      <div class="auth-brand">
+        <div class="brand-mark">S</div>
+        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+      </div>
+      <h2>Admin login</h2>
+      <p class="sub">Sign in to manage your gateway.</p>
+      <label class="field-label" for="login-pass">Password</label>
+      <input id="login-pass" type="password" placeholder="Admin password" autocomplete="current-password">
+      <button class="btn btn-accent btn-block" id="login-btn">Log in</button>
+      <p class="form-error" id="login-err"></p>
+    </div>
   </div>
 
-  <div class="card" id="login-card" hidden>
-    <h2>Admin login</h2>
-    <input id="login-pass" type="password" placeholder="Admin password" autocomplete="current-password">
-    <button id="login-btn">Log in</button>
-    <p id="err"></p>
+  <!-- ============ MAIN ============ -->
+  <div id="main-view" hidden>
+    <aside id="sidebar">
+      <div class="auth-brand" style="padding: 4px 12px 8px;">
+        <div class="brand-mark">S</div>
+        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+      </div>
+      <div id="nav"></div>
+      <div class="spacer"></div>
+      <div class="sidebar-foot">
+        <div class="version-line">srouter-workers · phase 1</div>
+        <button class="nav-item" id="logout-btn"><span class="dot"></span>Log out</button>
+      </div>
+    </aside>
+    <div id="content">
+      <header id="topbar"><h1 id="page-title">Overview</h1></header>
+      <main id="page"></main>
+    </div>
   </div>
-
-  <div class="card" id="status-card" hidden>
-    <h2>Status <span id="health-badge" class="badge ok">healthy</span></h2>
-    <h3>Providers</h3>
-    <table><thead><tr><th>ID</th><th>Type</th><th>Enabled</th></tr></thead><tbody id="providers"></tbody></table>
-    <h3>Virtual API keys</h3>
-    <table><thead><tr><th>Name</th><th>Enabled</th><th>Tokens used</th><th>Cost used</th></tr></thead><tbody id="keys"></tbody></table>
-    <h3>Circuit breaker</h3>
-    <pre id="circuit" style="font-size:.8rem;overflow:auto"></pre>
-    <p><button id="logout-btn">Log out</button></p>
-  </div>
-</main>
+</div>
+<div id="toast"></div>
 <script>
+"use strict";
 const $ = (id) => document.getElementById(id);
-const err = (m) => { $("err").textContent = m; };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtNum = (n) => Number(n || 0).toLocaleString("en-US");
+const fmtTime = (ts) => ts ? new Date(Number(ts)).toLocaleString() : "—";
+const fmtMoney = (n) => "$" + Number(n || 0).toFixed(4);
 
-async function status() {
-  const r = await fetch("/api/admin/status");
-  return r.json();
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 2200);
 }
-async function summary() {
-  const r = await fetch("/api/admin/summary");
-  if (!r.ok) return null;
-  return r.json();
-}
-function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
+function apiErrorText(t) {
+  try { const j = JSON.parse(t); return j.error || j.message || t; }
+  catch { return t || "Request failed"; }
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts
+  });
+  if (r.status === 401) { showAuth("login"); throw new Error("__auth__"); }
+  if (!r.ok) throw new Error(apiErrorText(await r.text()));
+  const text = await r.text();
+  return text ? JSON.parse(text) : {};
+}
+
+/* ---------------- auth ---------------- */
 async function boot() {
-  const { initialized } = await status();
-  if (!initialized) { $("setup-card").hidden = false; return; }
-  const s = await summary();
-  if (!s) { $("login-card").hidden = false; return; }
-  $("status-card").hidden = false;
-  $("providers").innerHTML = s.providers.map((p) =>
-    `<tr><td>${esc(p.id)}</td><td>${esc(p.provider_id)}</td><td>${p.enabled ? "yes" : "no"}</td></tr>`).join("") || "<tr><td colspan=3>No providers configured</td></tr>";
-  $("keys").innerHTML = s.apiKeys.map((k) =>
-    `<tr><td>${esc(k.name)}</td><td>${k.enabled ? "yes" : "no"}</td><td>${esc(k.usage_tokens)}</td><td>$${esc(k.usage_cost)}</td></tr>`).join("") || "<tr><td colspan=4>No virtual keys</td></tr>";
-  $("circuit").textContent = JSON.stringify(s.routerHealth?.states ?? {}, null, 1);
+  let initialized = false;
+  try { initialized = (await api("/api/admin/status")).initialized; }
+  catch (e) { if (e.message === "__auth__") return; }
+  if (!initialized) showAuth("setup");
+  else {
+    try { await api("/api/admin/summary"); enterApp(); }
+    catch (e) { if (e.message !== "__auth__") showAuth("login"); }
+  }
 }
 
-$("setup-btn").onclick = async () => {
-  err("");
-  const password = $("setup-pass").value;
-  const r = await fetch("/api/admin/setup", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ password }) });
-  if (!r.ok) { err("Setup failed: " + (await r.text())); return; }
-  location.reload();
+function showAuth(which) {
+  $("auth-view").hidden = false;
+  $("main-view").hidden = true;
+  $("setup-card").hidden = which !== "setup";
+  $("login-card").hidden = which !== "login";
+  $("setup-err").textContent = "";
+  $("login-err").textContent = "";
+}
+
+function wireAuth() {
+  const doSetup = async () => {
+    const errEl = $("setup-err");
+    errEl.textContent = "";
+    const password = $("setup-pass").value;
+    if (password.length < 8) { errEl.textContent = "Password must be at least 8 characters."; return; }
+    const btn = $("setup-btn");
+    btn.disabled = true;
+    try {
+      await api("/api/admin/setup", { method: "POST", body: JSON.stringify({ password }) });
+      location.reload();
+    } catch (e) {
+      if (e.message !== "__auth__") errEl.textContent = "Setup failed: " + e.message;
+    } finally { btn.disabled = false; }
+  };
+  const doLogin = async () => {
+    const errEl = $("login-err");
+    errEl.textContent = "";
+    const btn = $("login-btn");
+    btn.disabled = true;
+    try {
+      await api("/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ password: $("login-pass").value })
+      });
+      location.reload();
+    } catch (e) {
+      if (e.message !== "__auth__") errEl.textContent = "Login failed: " + e.message;
+    } finally { btn.disabled = false; }
+  };
+  $("setup-btn").onclick = doSetup;
+  $("login-btn").onclick = doLogin;
+  $("setup-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") doSetup(); });
+  $("login-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+}
+
+/* ---------------- nav ---------------- */
+const NAV = [
+  { items: [{ hash: "#/overview", label: "Overview" }] },
+  { label: "Gateway", items: [
+    { hash: "#/providers", label: "Providers" },
+    { hash: "#/keys", label: "API Keys" },
+    { hash: "#/combos", label: "Combos" }
+  ]},
+  { label: "Insights", items: [
+    { hash: "#/quotas", label: "Quotas" },
+    { hash: "#/analytics", label: "Analytics" },
+    { hash: "#/logs", label: "Logs" },
+    { hash: "#/pricing", label: "Pricing" }
+  ]},
+  { label: "System", items: [
+    { hash: "#/settings", label: "Settings" }
+  ]}
+];
+const TITLES = {};
+NAV.forEach((g) => g.items.forEach((i) => { TITLES[i.hash] = i.label; }));
+
+function renderNav() {
+  $("nav").innerHTML = NAV.map((g) =>
+    (g.label ? `<div class="nav-group-label">${esc(g.label)}</div>` : "") +
+    g.items.map((i) =>
+      `<button class="nav-item" data-hash="${i.hash}"><span class="dot"></span>${esc(i.label)}</button>`
+    ).join("")
+  ).join("");
+  $("nav").querySelectorAll(".nav-item").forEach((b) => {
+    b.onclick = () => { location.hash = b.dataset.hash; };
+  });
+}
+
+function enterApp() {
+  $("auth-view").hidden = true;
+  $("main-view").hidden = false;
+  renderNav();
+  if (!location.hash) location.hash = "#/overview";
+  route();
+}
+
+function route() {
+  const hash = location.hash || "#/overview";
+  document.querySelectorAll(".nav-item[data-hash]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.hash === hash));
+  $("page-title").textContent = TITLES[hash] || "Overview";
+  const page = $("page");
+  page.innerHTML = `<div class="empty"><h3>Loading…</h3></div>`;
+  const fn = PAGES[hash] || PAGES["#/overview"];
+  fn(page).catch((e) => {
+    if (e.message === "__auth__") return;
+    page.innerHTML = `<div class="empty"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`;
+  });
+}
+
+/* ---------------- shared widgets ---------------- */
+function pill(enabled) {
+  return enabled
+    ? `<span class="pill pill-on"><span class="pdot"></span>Enabled</span>`
+    : `<span class="pill pill-off"><span class="pdot"></span>Disabled</span>`;
+}
+function statusPill(code) {
+  const ok = code >= 200 && code < 300;
+  return ok
+    ? `<span class="pill pill-on"><span class="pdot"></span>${code}</span>`
+    : `<span class="pill pill-err"><span class="pdot"></span>${code}</span>`;
+}
+function pageHead(title, sub, actionHtml = "") {
+  return `<div class="page-head"><div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div><div>${actionHtml}</div></div>`;
+}
+function phase2(name, blurb) {
+  return `<div class="empty">
+    <span class="phase-badge">Phase 2</span>
+    <h3>${esc(name)}</h3>
+    <p>${esc(blurb)}</p>
+  </div>`;
+}
+
+/* ---------------- pages ---------------- */
+async function pageOverview(page) {
+  const [summary, logs] = await Promise.all([
+    api("/api/admin/summary"),
+    api("/api/admin/logs?limit=10")
+  ]);
+  const providers = summary.providers || [];
+  const keys = summary.apiKeys || [];
+  const total = logs.total || { n: 0, t: 0, cost: 0 };
+  const activeKeys = keys.filter((k) => k.enabled).length;
+  const states = (summary.routerHealth && summary.routerHealth.states) || {};
+  const stateRows = Object.entries(states);
+  const recent = logs.logs || [];
+
+  page.innerHTML =
+    `<div class="stat-grid">
+      <div class="stat"><div class="stat-label">Provider accounts</div><div class="stat-value">${providers.length}</div><div class="stat-hint">${providers.filter((p) => p.enabled).length} enabled</div></div>
+      <div class="stat"><div class="stat-label">API keys</div><div class="stat-value">${keys.length}</div><div class="stat-hint">${activeKeys} active</div></div>
+      <div class="stat"><div class="stat-label">Requests</div><div class="stat-value">${fmtNum(total.n)}</div><div class="stat-hint">all time</div></div>
+      <div class="stat"><div class="stat-label">Tokens / cost</div><div class="stat-value">${fmtNum(total.t)}</div><div class="stat-hint">${fmtMoney(total.cost)} estimated</div></div>
+    </div>
+    <div class="card">
+      <h3>Circuit breaker</h3>
+      <p class="card-sub">Live router health from the Durable Object.</p>
+      ${stateRows.length ? `<dl class="kv">` + stateRows.map(([k, v]) =>
+        `<dt class="mono">${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : String(v))}</dd>`
+      ).join("") + `</dl>` : `<p class="card-sub" style="margin:0">No circuit state reported yet.</p>`}
+    </div>
+    <div class="card">
+      <h3>Recent requests</h3>
+      <p class="card-sub">Latest gateway activity.</p>
+      ${recent.length ? `<table class="tbl"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Tokens</th><th>Status</th><th>Latency</th></tr></thead><tbody>` +
+        recent.map((l) => `<tr><td class="mono">${esc(fmtTime(l.created_at))}</td><td>${esc(l.provider_id)}</td><td class="mono">${esc(l.resolved_model || l.model)}</td><td class="mono">${fmtNum(l.total_tokens)}</td><td>${statusPill(l.status_code)}</td><td class="mono">${fmtNum(l.latency_ms)} ms</td></tr>`).join("") +
+        `</tbody></table>` : `<p class="card-sub" style="margin:0">No requests logged yet.</p>`}
+    </div>`;
+}
+
+async function pageProviders(page) {
+  const summary = await api("/api/admin/summary");
+  const providers = summary.providers || [];
+  page.innerHTML = pageHead("Providers", "Connected accounts with multi-account round-robin and circuit-breaker failover.") +
+    `<div class="card" style="padding: 8px 20px;">
+      ${providers.length ? `<table class="tbl"><thead><tr><th>Account</th><th>Provider</th><th>Status</th><th></th></tr></thead><tbody>` +
+        providers.map((p) => `<tr>
+          <td><div style="font-weight:600">${esc(p.alias || p.name || p.id.slice(0, 8))}</div><div class="mono" style="color:var(--faint);font-size:11.5px">${esc(p.id.slice(0, 8))}…</div></td>
+          <td><span class="pill pill-type">${esc(p.provider_id)}</span></td>
+          <td>${pill(p.enabled)}</td>
+          <td><div class="row-actions"><button class="btn btn-ghost btn-sm" data-toggle="${esc(p.id)}" data-on="${p.enabled ? 0 : 1}">${p.enabled ? "Disable" : "Enable"}</button></div></td>
+        </tr>`).join("") + `</tbody></table>`
+      : `<div class="empty"><h3>No providers connected</h3><p>Provider accounts are migrated from the 9router database. OAuth onboarding arrives in Phase 2.</p></div>`}
+    </div>`;
+  page.querySelectorAll("[data-toggle]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api(`/api/admin/providers/${encodeURIComponent(b.dataset.toggle)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: b.dataset.on === "1" })
+        });
+        toast("Provider updated");
+        route();
+      } catch (e) { if (e.message !== "__auth__") toast("Failed: " + e.message); b.disabled = false; }
+    };
+  });
+}
+
+async function pageKeys(page) {
+  const summary = await api("/api/admin/summary");
+  const keys = summary.apiKeys || [];
+  page.innerHTML = pageHead("API Keys", "Virtual keys for clients. Only key hashes are stored — the secret is shown once at creation.",
+      `<button class="btn btn-accent btn-sm" id="new-key-btn">New key</button>`) +
+    `<div id="new-key-form"></div>
+     <div id="new-key-result"></div>
+     <div class="card" style="padding: 8px 20px;">
+      ${keys.length ? `<table class="tbl"><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Tokens used</th><th>Cost used</th><th></th></tr></thead><tbody>` +
+        keys.map((k) => `<tr>
+          <td style="font-weight:600">${esc(k.name)}</td>
+          <td class="mono">${esc(k.key_prefix || "—")}</td>
+          <td>${pill(k.enabled)}</td>
+          <td class="mono">${fmtNum(k.usage_tokens)}</td>
+          <td class="mono">${fmtMoney(k.usage_cost)}</td>
+          <td><div class="row-actions">
+            <button class="btn btn-ghost btn-sm" data-ktoggle="${esc(k.id)}" data-kon="${k.enabled ? 0 : 1}">${k.enabled ? "Disable" : "Enable"}</button>
+            <button class="btn btn-danger btn-sm" data-krevoke="${esc(k.id)}" data-name="${esc(k.name)}">Revoke</button>
+          </div></td>
+        </tr>`).join("") + `</tbody></table>`
+      : `<div class="empty"><h3>No API keys yet</h3><p>Create a virtual key and point any OpenAI-compatible client at this worker with it.</p></div>`}
+    </div>`;
+
+  $("new-key-btn").onclick = () => {
+    $("new-key-result").innerHTML = "";
+    $("new-key-form").innerHTML = `<div class="card">
+      <h3>New API key</h3><p class="card-sub">The secret is displayed once — copy it immediately.</p>
+      <div class="inline-form">
+        <div><label class="field-label">Name</label><input type="text" id="nk-name" placeholder="e.g. laptop"></div>
+        <div><label class="field-label">Credit limit (USD, 0 = unlimited)</label><input type="number" id="nk-credit" value="0" min="0" step="0.01"></div>
+        <div class="full"><label class="field-label">Token quota (0 = unlimited)</label><input type="number" id="nk-quota" value="0" min="0" step="1"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-accent btn-sm" id="nk-create">Create key</button>
+        <button class="btn btn-ghost btn-sm" id="nk-cancel">Cancel</button>
+      </div>
+      <p class="form-error" id="nk-err"></p>
+    </div>`;
+    $("nk-cancel").onclick = () => { $("new-key-form").innerHTML = ""; };
+    $("nk-create").onclick = async () => {
+      const errEl = $("nk-err");
+      errEl.textContent = "";
+      const name = $("nk-name").value.trim();
+      if (!name) { errEl.textContent = "Give the key a name."; return; }
+      const btn = $("nk-create");
+      btn.disabled = true;
+      try {
+        const res = await api("/api/admin/keys", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            credit_limit: Number($("nk-credit").value) || 0,
+            quota_limit: Math.floor(Number($("nk-quota").value)) || 0
+          })
+        });
+        $("new-key-form").innerHTML = "";
+        $("new-key-result").innerHTML = `<div class="card">
+          <h3>Key created</h3>
+          <p class="card-sub">Copy it now — it will never be shown again.</p>
+          <div class="key-secret-box"><code id="created-secret">${esc(res.key)}</code><button class="btn btn-ghost btn-sm" id="copy-secret">Copy</button></div>
+        </div>`;
+        $("copy-secret").onclick = async () => {
+          try { await navigator.clipboard.writeText(res.key); toast("Copied to clipboard"); }
+          catch { toast("Copy failed — select the key manually"); }
+        };
+        route();
+      } catch (e) {
+        if (e.message !== "__auth__") errEl.textContent = "Failed: " + e.message;
+        btn.disabled = false;
+      }
+    };
+  };
+
+  page.querySelectorAll("[data-ktoggle]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api(`/api/admin/keys/${encodeURIComponent(b.dataset.ktoggle)}`, {
+          method: "PATCH", body: JSON.stringify({ enabled: b.dataset.kon === "1" })
+        });
+        toast("Key updated"); route();
+      } catch (e) { if (e.message !== "__auth__") toast("Failed: " + e.message); b.disabled = false; }
+    };
+  });
+  page.querySelectorAll("[data-krevoke]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm(`Revoke key "${b.dataset.name}"? Clients using it will stop working.`)) return;
+      b.disabled = true;
+      try {
+        await api(`/api/admin/keys/${encodeURIComponent(b.dataset.krevoke)}`, { method: "DELETE" });
+        toast("Key revoked"); route();
+      } catch (e) { if (e.message !== "__auth__") toast("Failed: " + e.message); b.disabled = false; }
+    };
+  });
+}
+
+async function pageLogs(page) {
+  const data = await api("/api/admin/logs?limit=100");
+  const logs = data.logs || [];
+  const total = data.total || {};
+  page.innerHTML = pageHead("Logs", `${fmtNum(total.n)} requests logged · ${fmtNum(total.t)} tokens · ${fmtMoney(total.cost)} estimated`) +
+    `<div class="card" style="padding: 8px 20px;">
+      ${logs.length ? `<table class="tbl"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Tokens</th><th>Status</th><th>Latency</th><th>Cost</th></tr></thead><tbody>` +
+        logs.map((l) => `<tr>
+          <td class="mono">${esc(fmtTime(l.created_at))}</td>
+          <td><span class="pill pill-type">${esc(l.provider_id)}</span></td>
+          <td class="mono">${esc(l.resolved_model || l.model)}</td>
+          <td class="mono">${fmtNum(l.total_tokens)}</td>
+          <td>${statusPill(l.status_code)}${l.fallback_occurred ? ` <span class="pill"><span class="pdot" style="background:var(--warn)"></span>fallback</span>` : ""}</td>
+          <td class="mono">${fmtNum(l.latency_ms)} ms</td>
+          <td class="mono">${fmtMoney(l.estimated_cost)}</td>
+        </tr>`).join("") + `</tbody></table>`
+      : `<div class="empty"><h3>No requests yet</h3><p>Send a chat completion through the gateway and it will show up here.</p></div>`}
+    </div>`;
+}
+
+async function pageSettings(page) {
+  page.innerHTML = pageHead("Settings", "Deployment information.") +
+    `<div class="card">
+      <h3>Deployment</h3>
+      <p class="card-sub">Cloudflare Workers port of SRouter.</p>
+      <dl class="kv">
+        <dt>Worker</dt><dd class="mono">srouter-workers</dd>
+        <dt>Endpoint</dt><dd class="mono">https://srouter-workers.ediprnm-keen.workers.dev</dd>
+        <dt>Chat completions</dt><dd class="mono">POST /v1/chat/completions</dd>
+        <dt>Models</dt><dd class="mono">GET /v1/models</dd>
+        <dt>Admin password</dt><dd>PBKDF2-SHA256 · 100,000 iterations (Workers WebCrypto cap)</dd>
+        <dt>Key storage</dt><dd>SHA-256 hashes only — secrets never stored</dd>
+        <dt>Credentials</dt><dd>AES-GCM encrypted envelopes (MASTER_KEY)</dd>
+      </dl>
+    </div>` +
+    phase2("Full settings", "Virtual-key defaults, per-provider routing weights, quota policies and backup/export controls arrive in Phase 2.");
+}
+
+const PAGES = {
+  "#/overview": pageOverview,
+  "#/providers": pageProviders,
+  "#/keys": pageKeys,
+  "#/logs": pageLogs,
+  "#/settings": pageSettings,
+  "#/combos": (p) => { p.innerHTML = pageHead("Combos", "Model fallback chains.") + phase2("Combos", "Chain models into fallback sequences (e.g. try premium, fall back to fast). The combo engine arrives in Phase 2."); return Promise.resolve(); },
+  "#/quotas": (p) => { p.innerHTML = pageHead("Quotas", "Usage limits.") + phase2("Quotas", "Per-key token quotas, credit limits and quota pooling across accounts arrive in Phase 2."); return Promise.resolve(); },
+  "#/analytics": (p) => { p.innerHTML = pageHead("Analytics", "Usage insights.") + phase2("Analytics", "Token usage charts, per-model breakdowns and cost trends arrive in Phase 2."); return Promise.resolve(); },
+  "#/pricing": (p) => { p.innerHTML = pageHead("Pricing", "Model pricing.") + phase2("Pricing", "The editable per-model pricing table arrives in Phase 2."); return Promise.resolve(); }
 };
-$("login-btn").onclick = async () => {
-  err("");
-  const password = $("login-pass").value;
-  const r = await fetch("/api/admin/login", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ password }) });
-  if (!r.ok) { err("Invalid password"); return; }
-  location.reload();
-};
+
+/* ---------------- init ---------------- */
+wireAuth();
+window.addEventListener("hashchange", () => { if (!$("main-view").hidden) route(); });
 $("logout-btn").onclick = async () => {
-  await fetch("/api/admin/logout", { method: "POST" });
+  try { await api("/api/admin/logout", { method: "POST" }); } catch (e) { /* ignore */ }
   location.reload();
 };
 boot();

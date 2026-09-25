@@ -177,7 +177,7 @@ adminRoutes.get("/admin/summary", async (c) => {
             "SELECT id, provider_id, name, alias, enabled FROM providers ORDER BY created_at DESC"
         ).all(),
         env.DB.prepare(
-            "SELECT id, name, enabled, usage_tokens, usage_cost FROM api_keys ORDER BY created_at DESC"
+            "SELECT id, name, key_prefix, enabled, credit_limit, quota_limit, usage_tokens, usage_cost FROM api_keys ORDER BY created_at DESC"
         ).all(),
         env.DB.prepare(
             "SELECT provider_id, model, status_code, total_tokens, latency_ms, created_at FROM request_logs ORDER BY created_at DESC LIMIT 50"
@@ -198,4 +198,92 @@ adminRoutes.get("/admin/summary", async (c) => {
         recentLogs: logs.results ?? [],
         routerHealth
     });
+});
+
+// --- Dashboard management endpoints (SRouter-style admin UI) ---
+
+adminRoutes.get("/admin/logs", async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "100", 10) || 100, 1), 500);
+    const rows = await c.env.DB.prepare(
+        `SELECT id, api_key_id, provider_id, account_id, model, resolved_model,
+                prompt_tokens, completion_tokens, total_tokens, status_code,
+                latency_ms, estimated_cost, fallback_occurred, created_at
+         FROM request_logs ORDER BY created_at DESC LIMIT ?`
+    )
+        .bind(limit)
+        .all();
+    const total = await c.env.DB.prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(total_tokens),0) AS t, COALESCE(SUM(estimated_cost),0) AS cost FROM request_logs"
+    ).first<{ n: number; t: number; cost: number }>();
+    return c.json({ logs: rows.results ?? [], total: total ?? { n: 0, t: 0, cost: 0 } });
+});
+
+const ProviderToggleSchema = z.object({ enabled: z.boolean() });
+
+adminRoutes.patch("/admin/providers/:id", async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+    const parsed = ProviderToggleSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Body must be { enabled: boolean }" }, 400);
+    const res = await c.env.DB.prepare("UPDATE providers SET enabled = ? WHERE id = ?")
+        .bind(parsed.data.enabled ? 1 : 0, c.req.param("id"))
+        .run();
+    if ((res.meta.changes ?? 0) === 0) return c.json({ error: "Provider not found" }, 404);
+    return c.json({ ok: true });
+});
+
+const KeyCreateSchema = z.object({
+    name: z.string().min(1).max(100),
+    credit_limit: z.number().nonnegative().optional().default(0),
+    quota_limit: z.number().int().nonnegative().optional().default(0)
+});
+
+function randomKeySecret(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]!);
+    return "sk-sr-" + btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+adminRoutes.post("/admin/keys", async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+    const parsed = KeyCreateSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Body must be { name, credit_limit?, quota_limit? }" }, 400);
+    const secret = randomKeySecret();
+    const id = crypto.randomUUID();
+    await c.env.DB.prepare(
+        `INSERT INTO api_keys (id, key_hash, key_prefix, name, enabled, credit_limit, quota_limit, created_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
+    )
+        .bind(id, await sha256Hex(secret), secret.slice(0, 12), parsed.data.name, parsed.data.credit_limit, parsed.data.quota_limit, Date.now())
+        .run();
+    // The plaintext secret is returned exactly once; only its hash is stored.
+    return c.json({ ok: true, id, key: secret }, 201);
+});
+
+adminRoutes.delete("/admin/keys/:id", async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+    const res = await c.env.DB.prepare("DELETE FROM api_keys WHERE id = ?")
+        .bind(c.req.param("id"))
+        .run();
+    if ((res.meta.changes ?? 0) === 0) return c.json({ error: "Key not found" }, 404);
+    return c.json({ ok: true });
+});
+
+const KeyToggleSchema = z.object({ enabled: z.boolean() });
+
+adminRoutes.patch("/admin/keys/:id", async (c) => {
+    const denied = await requireAdmin(c);
+    if (denied) return denied;
+    const parsed = KeyToggleSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Body must be { enabled: boolean }" }, 400);
+    const res = await c.env.DB.prepare("UPDATE api_keys SET enabled = ? WHERE id = ?")
+        .bind(parsed.data.enabled ? 1 : 0, c.req.param("id"))
+        .run();
+    if ((res.meta.changes ?? 0) === 0) return c.json({ error: "Key not found" }, 404);
+    return c.json({ ok: true });
 });
