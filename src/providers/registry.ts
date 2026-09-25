@@ -227,14 +227,42 @@ export function stripRoutingPrefix(model: string, account: DecryptedAccount): st
     return model;
 }
 
+/**
+ * Per-account cap for listModels(). Promise.allSettled waits for EVERY
+ * account, so one slow or hanging upstream (no fetch timeout in several
+ * executors) used to stall the entire aggregation — observed 100s+ for
+ * /v1/models, which then fails the request. A timed-out account is skipped
+ * like any other listModels failure; its static fallback (if any) is lost
+ * for this refresh, but the next refresh (or DO TTL expiry) retries it.
+ */
+export const LIST_MODELS_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+    });
+}
+
 /** Aggregate model list across accounts: "<alias>/<bareId>". */
 export async function listAllModels(
-    accounts: DecryptedAccount[]
+    accounts: DecryptedAccount[],
+    timeoutMs: number = LIST_MODELS_TIMEOUT_MS
 ): Promise<ModelObject[]> {
     const seen = new Set<string>();
     const out: ModelObject[] = [];
     const settled = await Promise.allSettled(
-        accounts.map(async (a) => ({ account: a, models: await buildAdapter(a).listModels() }))
+        accounts.map(async (a) => ({
+            account: a,
+            models: await withTimeout(
+                buildAdapter(a).listModels(),
+                timeoutMs,
+                `listModels(${a.id})`
+            )
+        }))
     );
     for (const r of settled) {
         if (r.status !== "fulfilled") continue;

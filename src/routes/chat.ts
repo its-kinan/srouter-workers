@@ -130,8 +130,11 @@ async function resolveModel(
     } catch {
         catalog = null;
     }
-    if (!catalog) {
+    if (!catalog || catalog.length === 0) {
         catalog = await listAllModels(accounts);
+        // Never cache an empty aggregation — see getMergedModels.
+        // An empty catalog matches nothing, so resolve to null (unknown model).
+        if (catalog.length === 0) return null;
         routerStub(env)
             .fetch(
                 new Request("https://do/models", {

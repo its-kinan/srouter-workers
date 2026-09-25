@@ -63,7 +63,9 @@ export async function getMergedModels(
         try {
             const cached = await stub.fetch(new Request("https://do/models"));
             const data = (await cached.json()) as { models: ModelObject[] | null };
-            if (data.models) {
+            // NOTE: an empty array is NOT a cache hit. A poisoned/empty cache
+            // must fall through to a live refresh instead of sticking until TTL.
+            if (data.models && data.models.length > 0) {
                 base = data.models;
                 return mergeDbModels(db, base, opts.providerFilter);
             }
@@ -79,7 +81,9 @@ export async function getMergedModels(
     }
     base = (await listAllModels(accounts)) as ModelObject[];
 
-    if (!opts.providerFilter) {
+    // Only cache non-empty aggregations: caching [] would poison the DO cache
+    // and make /v1/models return nothing until the TTL expires.
+    if (!opts.providerFilter && base.length > 0) {
         stub
             .fetch(
                 new Request("https://do/models", {

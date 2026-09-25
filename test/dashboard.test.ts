@@ -9,9 +9,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
 import { app } from "../src/index.js";
 import type { Env } from "../src/env.js";
+import { getMergedModels } from "../src/routes/models.js";
+import { listAllModels, loadAccounts } from "../src/providers/registry.js";
+import { encryptSecretsObject } from "../src/crypto/secretbox.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -305,5 +310,102 @@ describe("dashboard API contracts (real SRouter UI)", () => {
         assert.ok(out.status === 204 || out.status === 200, `logout -> ${out.status}`);
         const st = await req("/v1/admin/status", { headers: { Cookie: cookie } });
         assert.equal(st.body.authenticated, false);
+    });
+});
+
+describe("models aggregation hardening (/v1/models)", () => {
+    let modelsEnv: Env;
+    let doModels: unknown[] | null;
+
+    before(async () => {
+        const db = new DatabaseSync(":memory:");
+        const dir = join(process.cwd(), "src", "db", "migrations");
+        for (const f of readdirSync(dir).sort()) {
+            if (f.endsWith(".sql")) db.exec(readFileSync(join(dir, f), "utf8"));
+        }
+        doModels = null;
+        const routerStub = {
+            fetch: async (req: Request): Promise<Response> => {
+                if (req.method === "POST") {
+                    doModels = ((await req.json()) as { models: unknown[] }).models;
+                    return new Response(JSON.stringify({ ok: true }));
+                }
+                return new Response(JSON.stringify({ models: doModels }), {
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        };
+        modelsEnv = {
+            DB: new D1Adapter(db) as unknown as D1Database,
+            R2: {} as unknown as R2Bucket,
+            ROUTER_STATE: { getByName: () => routerStub } as unknown as DurableObjectNamespace,
+            MASTER_KEY: Buffer.from("m".repeat(32)).toString("base64"),
+            ENVIRONMENT: "test"
+        };
+        // One antigravity account with a token -> static ANTIGRAVITY_MODELS, no network.
+        const enc = await encryptSecretsObject(
+            { access_token: "tok", refresh_token: "r", extra: {} },
+            modelsEnv.MASTER_KEY
+        );
+        await modelsEnv.DB.prepare(
+            `INSERT INTO providers
+             (id, provider_id, name, category, protocol, secrets_enc, enabled, created_at)
+             VALUES (?,?,?,?,?,?,?,?)`
+        )
+            .bind("ag_test_1", "antigravity", "ag", "oauth", "gemini", enc, 1, Date.now())
+            .run();
+    });
+
+    it("an empty DO cache is not treated as a hit — it refreshes instead", async () => {
+        doModels = []; // poisoned cache
+        const models = await getMergedModels(modelsEnv);
+        assert.ok(models.length > 0, "expected the refresh to return models");
+        assert.ok(
+            doModels === null || (doModels as unknown[]).length > 0,
+            "empty result must not be written back to the DO cache"
+        );
+    });
+
+    it("a hanging upstream does not stall the aggregation", async () => {
+        // Local server that accepts connections but never responds.
+        const server = createServer(() => {});
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as AddressInfo).port;
+        try {
+            const enc = await encryptSecretsObject({ api_key: "k" }, modelsEnv.MASTER_KEY);
+            await modelsEnv.DB.prepare(
+                `INSERT INTO providers
+                 (id, provider_id, name, category, protocol, base_url, secrets_enc, enabled, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?)`
+            )
+                .bind(
+                    "hang_test_1",
+                    "openai-compatible",
+                    "hang",
+                    "api_key",
+                    "openai",
+                    `http://127.0.0.1:${port}`,
+                    enc,
+                    1,
+                    Date.now()
+                )
+                .run();
+            const accounts = await loadAccounts(modelsEnv.DB, modelsEnv.MASTER_KEY);
+            assert.ok(accounts.length >= 2, "both test accounts loaded");
+            const start = Date.now();
+            const models = await listAllModels(accounts, 500);
+            const elapsed = Date.now() - start;
+            assert.ok(
+                elapsed < 5000,
+                `aggregation took ${elapsed}ms — the hanging account was not cut off`
+            );
+            assert.ok(
+                models.some((m) => m.owned_by === "antigravity"),
+                "healthy accounts still contribute their models"
+            );
+        } finally {
+            server.closeAllConnections();
+            server.close();
+        }
     });
 });

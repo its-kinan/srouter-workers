@@ -154,6 +154,16 @@ def main():
         sys.exit(1)
     print("deployed:", r["result"]["id"])
 
+    # 5. restore cron triggers — a raw script upload wipes them.
+    #    NOTE: the body must be a RAW ARRAY; {"schedules": [...]} 400s.
+    r = api("PUT", f"/workers/scripts/{SCRIPT}/schedules",
+            raw_body=json.dumps([{"cron": "* * * * *"}]).encode(),
+            content_type="application/json")
+    if not r.get("success"):
+        print("CRON RESTORE FAILED:", json.dumps(r)[:500])
+        sys.exit(1)
+    print("cron restored:", r["result"])
+
 
 if __name__ == "__main__":
     main()
