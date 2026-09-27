@@ -9,6 +9,7 @@ import type {
 } from "../types/index.js";
 import { iterEventStreamFrames } from "./stream-utils.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 const RUNTIME_URL = "https://runtime.us-east-1.kiro.dev/generateAssistantResponse";
 const CODEWHISPERER_URL = "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse";
@@ -34,6 +35,8 @@ export interface KiroExecutorOptions {
     region?: string;
     profileArn?: string;
     providerSpecificData?: KiroProviderSpecificData;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 type KiroEvent = {
@@ -227,6 +230,7 @@ export class KiroExecutor implements AIProvider {
     private accessToken: string;
     private refreshToken?: string;
     private providerSpecificData: KiroProviderSpecificData;
+    private stealth?: StealthHeaders;
 
     constructor(options: KiroExecutorOptions = {}) {
         this.id = options.id ?? "kiro";
@@ -243,6 +247,7 @@ export class KiroExecutor implements AIProvider {
             region: options.region ?? options.providerSpecificData?.region ?? "us-east-1",
             profileArn: options.profileArn ?? options.providerSpecificData?.profileArn
         };
+        this.stealth = options.stealth;
     }
 
     updateToken(accessToken: string, refreshToken?: string): void {
@@ -348,11 +353,14 @@ export class KiroExecutor implements AIProvider {
 
     private headers(url: string): Record<string, string> {
         const token = this.accessToken || this.apiKey;
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "Amz-Sdk-Request": "attempt=1; max=3",
-            "Amz-Sdk-Invocation-Id": crypto.randomUUID()
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "Amz-Sdk-Request": "attempt=1; max=3",
+                "Amz-Sdk-Invocation-Id": crypto.randomUUID()
+            },
+            this.stealth
+        );
         if (url.includes("codewhisperer.")) headers["X-Amz-Target"] = CODEWHISPERER_TARGET;
         if (token) headers.Authorization = `Bearer ${token}`;
         if (this.providerSpecificData.authMethod === "api_key") headers.TokenType = "API_KEY";

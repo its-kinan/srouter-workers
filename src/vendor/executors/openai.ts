@@ -17,6 +17,7 @@ import {
     type UpstreamErrorPayload
 } from "./base.js";
 import { fetchWithRetry } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 function stripProviderPrefix(model: string): string {
     const slash = model.indexOf("/");
@@ -31,6 +32,8 @@ export interface OpenAIExecutorOptions {
     apiKey?: string;
     accessToken?: string;
     additionalHeaders?: Record<string, string>;
+    /** Stealth fingerprint bundle from the registry (preset + per-credential). */
+    stealth?: StealthHeaders;
 }
 
 export class OpenAIExecutor implements AIProvider {
@@ -41,6 +44,7 @@ export class OpenAIExecutor implements AIProvider {
     private apiKey: string;
     private accessToken: string;
     private additionalHeaders: Record<string, string>;
+    protected stealth?: StealthHeaders;
 
     constructor(options: OpenAIExecutorOptions = {}) {
         this.id = options.id ?? "openai";
@@ -50,6 +54,7 @@ export class OpenAIExecutor implements AIProvider {
         this.apiKey = options.apiKey ?? "";
         this.accessToken = options.accessToken ?? "";
         this.additionalHeaders = options.additionalHeaders ?? {};
+        this.stealth = options.stealth;
     }
 
     /**
@@ -60,13 +65,19 @@ export class OpenAIExecutor implements AIProvider {
     }
 
     protected getHeaders(accept?: string): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "User-Agent": "SRouter/1.0.0 (Node.js)",
-            "Accept-Encoding": "identity",
-            Accept: accept ?? "application/json"
-        };
-        Object.assign(headers, this.additionalHeaders);
+        // Stealth first (preset fills gaps), then executor defaults +
+        // additionalHeaders, then per-credential overrides. Auth is set
+        // last by the caller below and always wins.
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "User-Agent": "SRouter/1.0.0 (Node.js)",
+                "Accept-Encoding": "identity",
+                Accept: accept ?? "application/json",
+                ...this.additionalHeaders
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

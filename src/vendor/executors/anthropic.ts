@@ -15,6 +15,7 @@ import {
 } from "../translator/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 export interface AnthropicExecutorOptions {
     id?: string;
@@ -25,6 +26,8 @@ export interface AnthropicExecutorOptions {
     accessToken?: string;
     refreshToken?: string;
     organizationId?: string;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 // Anthropic-Beta flags — base for all models, heavy-agent flags gated to opus/sonnet
@@ -75,6 +78,7 @@ export class AnthropicExecutor implements AIProvider {
     private accessToken: string;
     private refreshToken?: string;
     private organizationId?: string;
+    private stealth?: StealthHeaders;
 
     constructor(options: AnthropicExecutorOptions = {}) {
         this.id = options.id ?? "anthropic";
@@ -85,6 +89,7 @@ export class AnthropicExecutor implements AIProvider {
         this.accessToken = options.accessToken ?? process.env.ANTHROPIC_ACCESS_TOKEN ?? "";
         this.refreshToken = options.refreshToken;
         this.organizationId = options.organizationId;
+        this.stealth = options.stealth;
         if (this.accessToken) {
             this.category = "oauth";
         }
@@ -96,11 +101,14 @@ export class AnthropicExecutor implements AIProvider {
     }
 
     private getHeaders(model?: string, stream = false): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
-            "Anthropic-Beta": selectAnthropicBeta(model || "")
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "Anthropic-Beta": selectAnthropicBeta(model || "")
+            },
+            this.stealth
+        );
 
         if (this.accessToken) {
             // OAuth account — Bearer token + CLI identity headers

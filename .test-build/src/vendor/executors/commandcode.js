@@ -3,26 +3,29 @@ import { COMMANDCODE_BASE_URL, COMMANDCODE_MODELS_URL } from "../constants.js";
 import { accumulateChunks, buildRequestBody, commandCodeEventToOpenAIChunk, createCommandCodeStreamState } from "../translator/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 export class CommandCodeExecutor {
     id;
     name;
     baseUrl;
     apiKey;
     accessToken;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "commandcode";
         this.name = options.name ?? "Command Code Provider";
         this.baseUrl = (options.baseUrl ?? COMMANDCODE_BASE_URL).replace(/\/$/, "");
         this.apiKey = options.apiKey ?? "";
         this.accessToken = options.accessToken ?? "";
+        this.stealth = options.stealth;
     }
     getHeaders() {
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             "x-command-code-version": "0.25.7",
             "x-cli-environment": "cli",
             "x-session-id": randomUUID()
-        };
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

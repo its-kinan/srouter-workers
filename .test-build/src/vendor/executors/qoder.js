@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { QODER_CHAT_BASE, QODER_CHAT_BASE_ALT, QODER_CHAT_SIG_PATH, QODER_CLIENT_TYPE, QODER_DATA_POLICY, QODER_IDE_VERSION, QODER_JOB_TOKEN_EXCHANGE_URL, QODER_LOGIN_VERSION, QODER_MACHINE_OS, QODER_MACHINE_TYPE, QODER_MODELS, QODER_MODEL_ALIASES, QODER_RSA_PUBLIC_KEY, QODER_USERINFO_URL } from "../constants.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 /**
  * Detects if Qwen / Qoder reasoning (thinking) is active on a request.
  */
@@ -292,6 +293,7 @@ export class QoderExecutor {
     refreshToken;
     providerSpecificData;
     rawConfigs = new Map();
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "qoder";
         this.name = options.name ?? "Qoder Provider";
@@ -300,6 +302,7 @@ export class QoderExecutor {
         this.accessToken = options.accessToken ?? "";
         this.refreshToken = options.refreshToken;
         this.providerSpecificData = options.providerSpecificData ?? {};
+        this.stealth = options.stealth;
     }
     updateToken(accessToken, refreshToken) {
         if (accessToken)
@@ -501,15 +504,17 @@ export class QoderExecutor {
             email: creds.email,
             machineId: creds.machineId
         });
-        const headers = {
+        // Stealth preset fills gaps; executor defaults apply; per-credential
+        // overrides win. Signed cosyHeaders go last — signatures must not break.
+        const headers = applyStealth({
             "Content-Type": "application/json",
             Accept: "text/event-stream",
             "Cache-Control": "no-cache",
             "X-Model-Key": qoderKey,
             "X-Model-Source": modelConfig.source || "system",
-            "Accept-Encoding": "identity",
-            ...cosyHeaders
-        };
+            "Accept-Encoding": "identity"
+        }, this.stealth);
+        Object.assign(headers, cosyHeaders);
         const res = await FetchWithBudget(url, {
             method: "POST",
             headers,

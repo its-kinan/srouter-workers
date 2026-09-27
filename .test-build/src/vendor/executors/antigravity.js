@@ -3,6 +3,7 @@ import { ANTIGRAVITY_IDE_USER_AGENT, accumulateChunks, buildAntigravityContentsA
 import { OpenAIExecutor } from "./openai.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { fetchWithRetry } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 /**
  * ============================================================================
  * SRouter Antigravity Executor
@@ -34,6 +35,7 @@ export class AntigravityExecutor {
     creditsMode;
     remainingCredits;
     openaiFallback;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "antigravity";
         this.name = options.name ?? "Antigravity Provider";
@@ -45,12 +47,14 @@ export class AntigravityExecutor {
         this.sessionId = generateSessionId();
         this.enabledCreditTypes = options.enabledCreditTypes;
         this.creditsMode = options.creditsMode ?? "on_demand";
+        this.stealth = options.stealth;
         this.openaiFallback = new OpenAIExecutor({
             id: this.id,
             name: this.name,
             baseUrl: options.baseUrl || ANTIGRAVITY_BASE_URL,
             apiKey: options.apiKey,
-            accessToken: this.accessToken
+            accessToken: this.accessToken,
+            stealth: this.stealth
         });
     }
     /**
@@ -68,10 +72,10 @@ export class AntigravityExecutor {
         return this.remainingCredits;
     }
     getHeaders(extra) {
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
-        };
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

@@ -2,6 +2,7 @@ import { CODEBUDDY_BASE_URL, CODEBUDDY_MODELS } from "../constants.js";
 import { accumulateChunks } from "../translator/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 function stripProviderPrefix(model) {
     const slash = model.indexOf("/");
     return slash >= 0 ? model.slice(slash + 1) : model;
@@ -16,6 +17,7 @@ export class CodeBuddyExecutor {
     domain;
     userAgent;
     flavor;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "codebuddy";
         this.name = options.name ?? "CodeBuddy Provider";
@@ -26,24 +28,24 @@ export class CodeBuddyExecutor {
         this.domain = options.domain;
         this.userAgent = options.userAgent ?? "IDE/2.108.1 CodeBuddy/2.108.1";
         this.flavor = options.flavor ?? "ide";
+        this.stealth = options.stealth;
     }
     updateToken(accessToken) {
         if (accessToken)
             this.accessToken = accessToken;
     }
     getHeaders() {
-        const headers = {
-            "Content-Type": "application/json",
-            "User-Agent": this.userAgent
-        };
         const ideName = this.flavor === "cli" ? "CLI" : "IDE";
-        headers["X-Product"] = "SaaS";
-        headers["X-IDE-Type"] = ideName;
-        headers["X-IDE-Name"] = ideName;
-        headers["x-requested-with"] = "XMLHttpRequest";
-        headers["x-codebuddy-request"] = "1";
-        if (this.domain)
-            headers["X-Domain"] = this.domain;
+        const headers = applyStealth({
+            "Content-Type": "application/json",
+            "User-Agent": this.userAgent,
+            "X-Product": "SaaS",
+            "X-IDE-Type": ideName,
+            "X-IDE-Name": ideName,
+            "x-requested-with": "XMLHttpRequest",
+            "x-codebuddy-request": "1",
+            ...(this.domain ? { "X-Domain": this.domain } : {})
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

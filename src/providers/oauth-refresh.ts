@@ -80,10 +80,12 @@ async function refreshCodex(refreshToken: string): Promise<RefreshedTokens> {
     };
 }
 
+import { GrokCliOAuth } from "./oauth-flows.js";
+
 /**
  * Refresh an OAuth account's access token. Returns null when the provider
- * type has no refresh flow in Phase 1 (qoder device tokens are a documented
- * no-op in SRouter too; grok-cli/gemini-cli arrive in Phase 2).
+ * type has no refresh flow (qoder device tokens are a documented no-op in
+ * SRouter too).
  */
 export async function refreshOAuthTokens(
     providerType: string,
@@ -103,6 +105,14 @@ export async function refreshOAuthTokens(
         }
         case "openai_codex":
             return refreshCodex(refreshToken);
+        case "grok-cli": {
+            const refreshed = await new GrokCliOAuth().refreshTokens(refreshToken);
+            return {
+                accessToken: refreshed.accessToken,
+                refreshToken: refreshed.refreshToken,
+                expiresIn: refreshed.expiresIn
+            };
+        }
         default:
             return null;
     }

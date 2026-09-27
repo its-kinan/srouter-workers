@@ -18,6 +18,7 @@ import { CodeBuddyExecutor } from "../vendor/executors/codebuddy.js";
 import { GrokCliExecutor } from "./grokcli.js";
 import { GeminiCliAdapter } from "./geminicli.js";
 import { decryptSecretsObject } from "../crypto/secretbox.js";
+import { stealthForAccount } from "./fingerprints.js";
 import { asAdapter, routingPrefixes } from "./types.js";
 /** Provider types with a working executor. */
 export const SUPPORTED_PROVIDERS = [
@@ -59,7 +60,10 @@ const PROVIDER_ALIASES = {
 export function providerAlias(providerType, rowAlias) {
     return rowAlias || PROVIDER_ALIASES[providerType] || providerType;
 }
-function buildExecutor(account) {
+function buildExecutor(account, operatorOverrides) {
+    // Stealth fingerprint bundle: provider preset (+ operator overrides) as
+    // defaults, per-credential custom_headers winning over executor defaults.
+    const stealth = stealthForAccount(account.providerType, account.customHeaders, operatorOverrides);
     const common = {
         id: account.id,
         name: account.name,
@@ -67,7 +71,8 @@ function buildExecutor(account) {
         apiKey: account.apiKey,
         accessToken: account.accessToken,
         refreshToken: account.refreshToken,
-        accountId: account.accountId
+        accountId: account.accountId,
+        stealth
     };
     switch (account.providerType) {
         case "antigravity":
@@ -190,8 +195,8 @@ export async function loadAccounts(db, masterKeyB64) {
     }
     return accounts;
 }
-export function buildAdapter(account) {
-    const executor = buildExecutor(account);
+export function buildAdapter(account, operatorOverrides) {
+    const executor = buildExecutor(account, operatorOverrides);
     return asAdapter(executor, account.id);
 }
 /**

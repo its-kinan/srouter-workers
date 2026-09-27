@@ -11,8 +11,8 @@
 //                x-grok-client-version: 0.2.99
 //                x-grok-client-identifier: grok-shell
 //   - OAuth:     device-code flow at https://auth.x.ai/oauth2/device/code
-//                (Phase 2; Phase 1 consumes pre-provisioned accounts migrated
-//                from 9router, whose tokens refresh via the cron sweeper then)
+//                (interactive login via GET /v1/auth/grok-cli/device + /poll;
+//                migrated 9router accounts refresh via the cron sweeper)
 
 import type {
     ChatCompletionChunk,
@@ -31,6 +31,7 @@ import {
     type ResponsesStreamEventData
 } from "../vendor/translator/index.js";
 import { parseDataLine, streamLines } from "../vendor/executors/base.js";
+import { applyStealth, type StealthHeaders } from "./fingerprints.js";
 
 export const GROK_CLI_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 const GROK_CLI_VERSION = "0.2.99";
@@ -52,6 +53,8 @@ export interface GrokCliExecutorOptions {
     accessToken?: string;
     apiKey?: string;
     refreshToken?: string;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 export class GrokCliExecutor {
@@ -63,6 +66,7 @@ export class GrokCliExecutor {
     private accessToken: string;
     private apiKey: string;
     private refreshToken?: string;
+    private stealth?: StealthHeaders;
 
     constructor(options: GrokCliExecutorOptions = {}) {
         this.id = options.id ?? "grok-cli";
@@ -71,6 +75,7 @@ export class GrokCliExecutor {
         this.accessToken = options.accessToken ?? "";
         this.apiKey = options.apiKey ?? "";
         this.refreshToken = options.refreshToken;
+        this.stealth = options.stealth;
     }
 
     updateToken(accessToken: string, refreshToken?: string): void {
@@ -79,14 +84,17 @@ export class GrokCliExecutor {
     }
 
     private getHeaders(): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "User-Agent": GROK_CLI_USER_AGENT,
-            "x-xai-token-auth": "xai-grok-cli",
-            "x-grok-client-version": GROK_CLI_VERSION,
-            "x-grok-client-identifier": "grok-shell"
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                "User-Agent": GROK_CLI_USER_AGENT,
+                "x-xai-token-auth": "xai-grok-cli",
+                "x-grok-client-version": GROK_CLI_VERSION,
+                "x-grok-client-identifier": "grok-shell"
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) headers["Authorization"] = `Bearer ${token}`;
         return headers;

@@ -2,6 +2,7 @@ import { ANTHROPIC_BASE_URL } from "../constants.js";
 import { AnthropicEventToOpenAIChunk, AnthropicToOpenAIResponse, OpenAIToAnthropicRequest } from "../translator/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 // Anthropic-Beta flags — base for all models, heavy-agent flags gated to opus/sonnet
 // (port of 9router providers/shared.js selectAnthropicBeta)
 const ANTHROPIC_BETA_BASE = [
@@ -48,6 +49,7 @@ export class AnthropicExecutor {
     accessToken;
     refreshToken;
     organizationId;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "anthropic";
         this.name = options.name ?? "Anthropic Provider";
@@ -57,6 +59,7 @@ export class AnthropicExecutor {
         this.accessToken = options.accessToken ?? process.env.ANTHROPIC_ACCESS_TOKEN ?? "";
         this.refreshToken = options.refreshToken;
         this.organizationId = options.organizationId;
+        this.stealth = options.stealth;
         if (this.accessToken) {
             this.category = "oauth";
         }
@@ -67,11 +70,11 @@ export class AnthropicExecutor {
             this.refreshToken = refreshToken;
     }
     getHeaders(model, stream = false) {
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
             "Anthropic-Beta": selectAnthropicBeta(model || "")
-        };
+        }, this.stealth);
         if (this.accessToken) {
             // OAuth account — Bearer token + CLI identity headers
             headers["Authorization"] = `Bearer ${this.accessToken}`;

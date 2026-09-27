@@ -467,6 +467,186 @@ export class CodeBuddyCNOAuth extends CodeBuddyOAuth {
     }
 }
 // ---------------------------------------------------------------------------
+// Grok CLI (xAI device code flow — ported from 9router decolua implementation)
+// ---------------------------------------------------------------------------
+export const GROK_CLI_OAUTH_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828";
+export const GROK_CLI_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code";
+export const GROK_CLI_TOKEN_URL = "https://auth.x.ai/oauth2/token";
+export const GROK_CLI_OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write";
+export const GROK_CLI_OAUTH_REFERRER = "grok-build";
+export const GROK_CLI_OAUTH_USER_AGENT = "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)";
+export const GROK_CLI_USER_URL = "https://cli-chat-proxy.grok.com/v1/user";
+export const GROK_CLI_CLIENT_VERSION = "0.2.93";
+export class GrokCliOAuth {
+    clientId;
+    deviceCodeUrl;
+    tokenUrl;
+    scope;
+    referrer;
+    userAgent;
+    constructor(options = {}) {
+        this.clientId = options.clientId ?? GROK_CLI_OAUTH_CLIENT_ID;
+        this.deviceCodeUrl = options.deviceCodeUrl ?? GROK_CLI_DEVICE_CODE_URL;
+        this.tokenUrl = options.tokenUrl ?? GROK_CLI_TOKEN_URL;
+        this.scope = options.scope ?? GROK_CLI_OAUTH_SCOPE;
+        this.referrer = options.referrer ?? GROK_CLI_OAUTH_REFERRER;
+        this.userAgent = options.userAgent ?? GROK_CLI_OAUTH_USER_AGENT;
+    }
+    async requestDeviceCode() {
+        const body = new URLSearchParams({
+            client_id: this.clientId,
+            scope: this.scope,
+            referrer: this.referrer
+        });
+        const response = await fetch(this.deviceCodeUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Accept: "application/json",
+                "User-Agent": this.userAgent
+            },
+            body
+        });
+        if (!response.ok) {
+            throw new Error(`Grok CLI device code request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+        }
+        const data = (await response.json());
+        if (!data.device_code || !data.user_code || !data.verification_uri) {
+            throw new Error("Grok CLI device code request returned incomplete response");
+        }
+        return {
+            deviceCode: data.device_code,
+            userCode: data.user_code,
+            verificationUri: data.verification_uri,
+            verificationUriComplete: data.verification_uri_complete,
+            expiresIn: data.expires_in ?? 1800,
+            interval: data.interval ?? 5
+        };
+    }
+    async pollDeviceToken(deviceCode) {
+        const response = await fetch(this.tokenUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Accept: "application/json",
+                "User-Agent": this.userAgent
+            },
+            body: new URLSearchParams({
+                grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+                device_code: deviceCode,
+                client_id: this.clientId
+            })
+        });
+        let data;
+        try {
+            data = (await response.json());
+        }
+        catch {
+            const text = await response.text().catch(() => "");
+            data = { error: "invalid_response", error_description: text };
+        }
+        // Device flow: 400 + authorization_pending/slow_down is expected while
+        // the user authorizes — not an error.
+        if (data.error === "authorization_pending" || data.error === "slow_down") {
+            return { status: AuthPollStatus.PENDING };
+        }
+        if (!response.ok || !data.access_token) {
+            return {
+                status: AuthPollStatus.PENDING,
+                error: data.error_description || data.error || `Token request failed (${response.status})`
+            };
+        }
+        return {
+            status: AuthPollStatus.OK,
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+            idToken: data.id_token,
+            expiresIn: data.expires_in,
+            scope: data.scope
+        };
+    }
+    async refreshTokens(refreshToken) {
+        const response = await fetch(this.tokenUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Accept: "application/json",
+                "User-Agent": this.userAgent
+            },
+            body: new URLSearchParams({
+                grant_type: "refresh_token",
+                client_id: this.clientId,
+                refresh_token: refreshToken
+            })
+        });
+        if (!response.ok) {
+            throw new Error(`Grok CLI token refresh failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+        }
+        const data = (await response.json());
+        return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token ?? refreshToken,
+            idToken: data.id_token,
+            expiresIn: data.expires_in,
+            tokenType: data.token_type ?? "Bearer"
+        };
+    }
+    /** Best-effort user profile from cli-chat-proxy (non-fatal). */
+    async fetchUserProfile(accessToken) {
+        try {
+            const response = await fetch(GROK_CLI_USER_URL, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/json",
+                    "User-Agent": this.userAgent,
+                    "x-xai-token-auth": "xai-grok-cli",
+                    "x-grok-client-version": GROK_CLI_CLIENT_VERSION
+                }
+            });
+            if (!response.ok)
+                return null;
+            const user = (await response.json());
+            const displayName = [user.firstName, user.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .trim();
+            return {
+                email: user.email,
+                userId: user.userId ?? user.principalId,
+                displayName: displayName || undefined,
+                hasGrokCodeAccess: user.hasGrokCodeAccess,
+                subscriptionTier: user.subscriptionTier
+            };
+        }
+        catch {
+            return null;
+        }
+    }
+}
+/** Extracts an email claim from a JWT (id_token or access_token). */
+export function extractEmailFromJwt(token) {
+    if (!token || typeof token !== "string" || !token.startsWith("eyJ"))
+        return undefined;
+    try {
+        const parts = token.split(".");
+        if (parts.length < 2)
+            return undefined;
+        const payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const decoded = JSON.parse(atob(payloadB64));
+        if (typeof decoded.email === "string" && decoded.email.includes("@"))
+            return decoded.email;
+        if (typeof decoded.preferred_username === "string" && decoded.preferred_username.includes("@")) {
+            return decoded.preferred_username;
+        }
+        if (typeof decoded.sub === "string" && decoded.sub.includes("@"))
+            return decoded.sub;
+    }
+    catch {
+        return undefined;
+    }
+    return undefined;
+}
+// ---------------------------------------------------------------------------
 // Cline (WorkOS device flow)
 // ---------------------------------------------------------------------------
 export const CLINE_BASE_URL = "https://api.cline.bot/api/v1";

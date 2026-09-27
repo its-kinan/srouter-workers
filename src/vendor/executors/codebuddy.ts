@@ -10,6 +10,7 @@ import type {
 } from "../types/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 function stripProviderPrefix(model: string): string {
     const slash = model.indexOf("/");
@@ -27,6 +28,8 @@ export interface CodeBuddyExecutorOptions {
     userAgent?: string;
     /** Header profile: "cli" identifies as the CodeBuddy CLI (X-IDE-Type: CLI), "ide" as the IDE plugin */
     flavor?: "ide" | "cli";
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 export class CodeBuddyExecutor implements AIProvider {
@@ -39,6 +42,7 @@ export class CodeBuddyExecutor implements AIProvider {
     private domain?: string;
     private userAgent: string;
     private flavor: "ide" | "cli";
+    private stealth?: StealthHeaders;
 
     constructor(options: CodeBuddyExecutorOptions = {}) {
         this.id = options.id ?? "codebuddy";
@@ -50,6 +54,7 @@ export class CodeBuddyExecutor implements AIProvider {
         this.domain = options.domain;
         this.userAgent = options.userAgent ?? "IDE/2.108.1 CodeBuddy/2.108.1";
         this.flavor = options.flavor ?? "ide";
+        this.stealth = options.stealth;
     }
 
     updateToken(accessToken: string): void {
@@ -57,17 +62,20 @@ export class CodeBuddyExecutor implements AIProvider {
     }
 
     private getHeaders(): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "User-Agent": this.userAgent
-        };
         const ideName = this.flavor === "cli" ? "CLI" : "IDE";
-        headers["X-Product"] = "SaaS";
-        headers["X-IDE-Type"] = ideName;
-        headers["X-IDE-Name"] = ideName;
-        headers["x-requested-with"] = "XMLHttpRequest";
-        headers["x-codebuddy-request"] = "1";
-        if (this.domain) headers["X-Domain"] = this.domain;
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "User-Agent": this.userAgent,
+                "X-Product": "SaaS",
+                "X-IDE-Type": ideName,
+                "X-IDE-Name": ideName,
+                "x-requested-with": "XMLHttpRequest",
+                "x-codebuddy-request": "1",
+                ...(this.domain ? { "X-Domain": this.domain } : {})
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

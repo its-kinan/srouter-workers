@@ -14,6 +14,7 @@ import { requireAdmin } from "../../middleware/requireAdmin.js";
 import { apiError } from "../../lib/api-error.js";
 import { encryptSecretsObject } from "../../crypto/secretbox.js";
 import { decryptAccount, providerAlias } from "../../providers/registry.js";
+import { PROVIDER_FINGERPRINTS, resolveStealthHeaders, sanitizeStealthHeaders } from "../../providers/fingerprints.js";
 import { getMergedModels } from "../models.js";
 export const providersRoutes = new Hono();
 /** Path params are always present on these routes; default to "" for typing. */
@@ -509,6 +510,59 @@ providersRoutes.patch("/:providerId/enabled", requireAdmin, async (c) => {
     if (!def)
         return apiError(c, 404, "Provider not found", "provider_not_found");
     return c.json(def);
+});
+// ---------------------------------------------------------------------------
+// Stealth headers — per-connection fingerprint overrides
+// ---------------------------------------------------------------------------
+// GET /v1/providers/:id/headers — view resolved stealth headers (admin).
+// Returns the provider preset, the per-credential overrides, and the merged
+// result. Never includes auth headers or secret values.
+providersRoutes.get("/:id/headers", requireAdmin, async (c) => {
+    const id = reqParam(c, "id");
+    const row = await c.env.DB.prepare("SELECT * FROM providers WHERE id = ?")
+        .bind(id)
+        .first();
+    if (!row) {
+        return apiError(c, 404, "Connection not found", "connection_not_found");
+    }
+    const perCredential = sanitizeStealthHeaders(parseJsonObject(row.custom_headers));
+    const preset = sanitizeStealthHeaders(PROVIDER_FINGERPRINTS[row.provider_id] ?? {});
+    return c.json({
+        id: row.id,
+        provider_id: row.provider_id,
+        preset,
+        per_credential: perCredential,
+        merged: resolveStealthHeaders(row.provider_id, perCredential)
+    });
+});
+// PATCH /v1/providers/:id/headers — set per-credential stealth headers (admin).
+// Body: { headers: { "Header-Name": "value", ... } } or { headers: null } to clear.
+// Protected headers (Authorization, etc.) are silently stripped, never stored.
+providersRoutes.patch("/:id/headers", requireAdmin, async (c) => {
+    const id = reqParam(c, "id");
+    const body = (await c.req.json().catch(() => null));
+    if (!body || typeof body !== "object" || !("headers" in body)) {
+        return apiError(c, 400, "headers (object or null) is required", "invalid_body");
+    }
+    const row = await c.env.DB.prepare("SELECT id FROM providers WHERE id = ?")
+        .bind(id)
+        .first();
+    if (!row) {
+        return apiError(c, 404, "Connection not found", "connection_not_found");
+    }
+    const clean = body.headers ? sanitizeStealthHeaders(body.headers) : null;
+    // Validate: keys must be non-empty token-safe strings, values must be strings.
+    if (clean) {
+        for (const [k, v] of Object.entries(clean)) {
+            if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(k) || typeof v !== "string") {
+                return apiError(c, 400, `Invalid header "${k}"`, "invalid_header");
+            }
+        }
+    }
+    await c.env.DB.prepare("UPDATE providers SET custom_headers = ? WHERE id = ?")
+        .bind(clean && Object.keys(clean).length > 0 ? JSON.stringify(clean) : null, id)
+        .run();
+    return c.json({ id, headers: clean ?? {} });
 });
 // ---------------------------------------------------------------------------
 // GET /v1/providers/:providerId — detail with connections + live models

@@ -1,6 +1,7 @@
 import { OPENAI_BASE_URL } from "../constants.js";
 import { DescribeErrorPayload, parseDataLine, streamLines } from "./base.js";
 import { fetchWithRetry } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 function stripProviderPrefix(model) {
     const slash = model.indexOf("/");
     return slash >= 0 ? model.slice(slash + 1) : model;
@@ -13,6 +14,7 @@ export class OpenAIExecutor {
     apiKey;
     accessToken;
     additionalHeaders;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "openai";
         this.name = options.name ?? "OpenAI Provider";
@@ -21,6 +23,7 @@ export class OpenAIExecutor {
         this.apiKey = options.apiKey ?? "";
         this.accessToken = options.accessToken ?? "";
         this.additionalHeaders = options.additionalHeaders ?? {};
+        this.stealth = options.stealth;
     }
     /**
      * Update tokens after a refresh — called by TokenRefreshService.
@@ -30,13 +33,16 @@ export class OpenAIExecutor {
             this.accessToken = accessToken;
     }
     getHeaders(accept) {
-        const headers = {
+        // Stealth first (preset fills gaps), then executor defaults +
+        // additionalHeaders, then per-credential overrides. Auth is set
+        // last by the caller below and always wins.
+        const headers = applyStealth({
             "Content-Type": "application/json",
             "User-Agent": "SRouter/1.0.0 (Node.js)",
             "Accept-Encoding": "identity",
-            Accept: accept ?? "application/json"
-        };
-        Object.assign(headers, this.additionalHeaders);
+            Accept: accept ?? "application/json",
+            ...this.additionalHeaders
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

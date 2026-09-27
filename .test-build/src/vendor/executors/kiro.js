@@ -1,5 +1,6 @@
 import { iterEventStreamFrames } from "./stream-utils.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 const RUNTIME_URL = "https://runtime.us-east-1.kiro.dev/generateAssistantResponse";
 const CODEWHISPERER_URL = "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse";
 const Q_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
@@ -165,6 +166,7 @@ export class KiroExecutor {
     accessToken;
     refreshToken;
     providerSpecificData;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "kiro";
         this.name = options.name ?? "Kiro";
@@ -179,6 +181,7 @@ export class KiroExecutor {
             region: options.region ?? options.providerSpecificData?.region ?? "us-east-1",
             profileArn: options.profileArn ?? options.providerSpecificData?.profileArn
         };
+        this.stealth = options.stealth;
     }
     updateToken(accessToken, refreshToken) {
         if (accessToken)
@@ -281,11 +284,11 @@ export class KiroExecutor {
     }
     headers(url) {
         const token = this.accessToken || this.apiKey;
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             "Amz-Sdk-Request": "attempt=1; max=3",
             "Amz-Sdk-Invocation-Id": crypto.randomUUID()
-        };
+        }, this.stealth);
         if (url.includes("codewhisperer."))
             headers["X-Amz-Target"] = CODEWHISPERER_TARGET;
         if (token)

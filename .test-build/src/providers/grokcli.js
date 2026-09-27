@@ -11,10 +11,11 @@
 //                x-grok-client-version: 0.2.99
 //                x-grok-client-identifier: grok-shell
 //   - OAuth:     device-code flow at https://auth.x.ai/oauth2/device/code
-//                (Phase 2; Phase 1 consumes pre-provisioned accounts migrated
-//                from 9router, whose tokens refresh via the cron sweeper then)
+//                (interactive login via GET /v1/auth/grok-cli/device + /poll;
+//                migrated 9router accounts refresh via the cron sweeper)
 import { accumulateChunks, ChatToResponsesBody, CreateResponsesStreamState, NormalizeResponsesInput, ResponsesEventToChunk } from "../vendor/translator/index.js";
 import { parseDataLine, streamLines } from "../vendor/executors/base.js";
+import { applyStealth } from "./fingerprints.js";
 export const GROK_CLI_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 const GROK_CLI_VERSION = "0.2.99";
 const GROK_CLI_USER_AGENT = `grok-shell/${GROK_CLI_VERSION} (linux; x86_64)`;
@@ -35,6 +36,7 @@ export class GrokCliExecutor {
     accessToken;
     apiKey;
     refreshToken;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "grok-cli";
         this.name = options.name ?? "Grok CLI";
@@ -42,6 +44,7 @@ export class GrokCliExecutor {
         this.accessToken = options.accessToken ?? "";
         this.apiKey = options.apiKey ?? "";
         this.refreshToken = options.refreshToken;
+        this.stealth = options.stealth;
     }
     updateToken(accessToken, refreshToken) {
         if (accessToken)
@@ -50,14 +53,14 @@ export class GrokCliExecutor {
             this.refreshToken = refreshToken;
     }
     getHeaders() {
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             Accept: "application/json",
             "User-Agent": GROK_CLI_USER_AGENT,
             "x-xai-token-auth": "xai-grok-cli",
             "x-grok-client-version": GROK_CLI_VERSION,
             "x-grok-client-identifier": "grok-shell"
-        };
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token)
             headers["Authorization"] = `Bearer ${token}`;

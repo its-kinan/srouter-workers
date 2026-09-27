@@ -9,7 +9,7 @@
 //   GET  /v1/auth/<provider>/callback — exchange code+state for tokens, store provider
 //   POST /v1/auth/<provider>/callback — same, accepts JSON body {code, state, callback_url}
 //
-// Device flows (cline, codebuddy, codebuddy-cn, qoder):
+// Device flows (cline, codebuddy, codebuddy-cn, grok-cli, qoder):
 //   GET  /v1/auth/<provider>/device   — initiate device auth, return user code + verify URL
 //   GET  /v1/auth/<provider>/poll     — poll for token completion (?state= or JSON {state})
 //   POST /v1/auth/<provider>/poll
@@ -25,7 +25,7 @@ import { Hono } from "hono";
 import { requireAdmin } from "../../middleware/requireAdmin.js";
 import { apiError } from "../../lib/api-error.js";
 import { encryptSecret, decryptSecret, encryptSecretsObject } from "../../crypto/secretbox.js";
-import { generatePKCE, AuthPollStatus, AntigravityOAuth, ClaudeOAuth, OpenAICodexOAuth, QoderOAuth, CodeBuddyOAuth, CodeBuddyCNOAuth, ClineOAuth, CLINE_BASE_URL } from "../../providers/oauth-flows.js";
+import { generatePKCE, AuthPollStatus, AntigravityOAuth, ClaudeOAuth, OpenAICodexOAuth, QoderOAuth, CodeBuddyOAuth, CodeBuddyCNOAuth, ClineOAuth, GrokCliOAuth, extractEmailFromJwt, CLINE_BASE_URL } from "../../providers/oauth-flows.js";
 export const oauthRoutes = new Hono();
 /** Providers whose credentials can be imported directly as a token. */
 const TOKEN_IMPORT_PROVIDERS = new Set([
@@ -39,12 +39,13 @@ const TOKEN_IMPORT_PROVIDERS = new Set([
     "commandcode",
     "anthropic",
     "atria",
-    "tokenrouter"
+    "tokenrouter",
+    "grok-cli"
 ]);
 /** Providers whose token is stored as an api_key rather than an access_token. */
 const API_KEY_GROUP = new Set(["commandcode", "anthropic", "atria", "tokenrouter"]);
 const PKCE_PROVIDERS = new Set(["openai", "antigravity", "claude", "qoder"]);
-const DEVICE_PROVIDERS = new Set(["cline", "codebuddy", "codebuddy-cn"]);
+const DEVICE_PROVIDERS = new Set(["cline", "codebuddy", "codebuddy-cn", "grok-cli"]);
 const PKCE_SESSION_MAX_AGE_MS = 15 * 60 * 1000;
 /**
  * Mirror of the dashboard's authProviderIdOf() (apps/web/src/utils/provider-oauth.utils.ts):
@@ -79,7 +80,8 @@ function displayName(provider) {
         commandcode: "CommandCode",
         anthropic: "Anthropic",
         atria: "Atria",
-        tokenrouter: "TokenRouter"
+        tokenrouter: "TokenRouter",
+        "grok-cli": "Grok CLI"
     };
     return names[provider] ?? provider;
 }
@@ -91,7 +93,8 @@ function successMessage(provider) {
         qoder: "Login Qoder Berhasil!",
         cline: "Login Cline Berhasil!",
         codebuddy: "Login CodeBuddy Berhasil!",
-        "codebuddy-cn": "Login CodeBuddy CN Berhasil!"
+        "codebuddy-cn": "Login CodeBuddy CN Berhasil!",
+        "grok-cli": "Login Grok CLI Berhasil!"
     };
     return messages[provider] ?? `Login ${displayName(provider)} Berhasil!`;
 }
@@ -247,6 +250,8 @@ function baseUrlFor(provider) {
         return "https://www.codebuddy.ai/v2/chat/completions";
     if (provider === "codebuddy-cn")
         return "https://copilot.tencent.com/v2/chat/completions";
+    if (provider === "grok-cli")
+        return "https://cli-chat-proxy.grok.com/v1";
     return undefined;
 }
 /** Derive the callback redirect URI from the incoming request origin. */
@@ -384,6 +389,27 @@ for (const p of ["openai", "antigravity", "claude", "qoder"]) {
 async function initiateDeviceFlow(c, provider) {
     try {
         await cleanupExpiredOAuthSessions(c.env.DB);
+        if (provider === "grok-cli") {
+            const device = await new GrokCliOAuth().requestDeviceCode();
+            const stateBytes = crypto.getRandomValues(new Uint8Array(16));
+            let s = "";
+            for (let i = 0; i < stateBytes.length; i++)
+                s += String.fromCharCode(stateBytes[i]);
+            const state = btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+            await saveOAuthSession(c.env.DB, c.env.MASTER_KEY, {
+                state,
+                deviceCode: device.deviceCode,
+                clientId: "",
+                redirectUri: ""
+            });
+            return c.json({
+                authorizeUrl: device.verificationUriComplete ?? device.verificationUri,
+                state,
+                userCode: device.userCode,
+                expiresIn: device.expiresIn,
+                interval: device.interval
+            });
+        }
         if (provider === "cline") {
             const device = await new ClineOAuth().requestDeviceAuthorization();
             // Use a random state key; the WorkOS device_code is stored encrypted-adjacent.
@@ -437,6 +463,45 @@ async function pollDeviceFlow(c, provider) {
     if (!session) {
         return c.json({ status: AuthPollStatus.PENDING, error: "Session expired or not found" });
     }
+    if (provider === "grok-cli") {
+        if (!session.device_code) {
+            await releaseOAuthSession(c.env.DB, state);
+            return c.json({ status: AuthPollStatus.PENDING, error: "Session expired or not found" });
+        }
+        const oauth = new GrokCliOAuth();
+        const result = await oauth.pollDeviceToken(session.device_code);
+        if (result.status !== AuthPollStatus.OK || !result.accessToken) {
+            await releaseOAuthSession(c.env.DB, state);
+            return c.json({ status: AuthPollStatus.PENDING, error: result.error });
+        }
+        await deleteOAuthSession(c.env.DB, state);
+        // Identity: id_token email > access_token email > /v1/user profile.
+        const profile = await oauth.fetchUserProfile(result.accessToken);
+        const email = extractEmailFromJwt(result.idToken) ||
+            extractEmailFromJwt(result.accessToken) ||
+            profile?.email;
+        const now = Date.now();
+        const accountName = (email && `Grok CLI (${email})`) ||
+            (profile?.displayName && `Grok CLI (${profile.displayName})`) ||
+            `Grok CLI (Account #${now.toString().slice(-4)})`;
+        const stored = await storeOAuthProvider(c.env, provider, {
+            name: accountName,
+            baseUrl: baseUrlFor(provider),
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+            accountId: profile?.userId,
+            expiresIn: result.expiresIn,
+            providerSpecificData: {
+                authMethod: "device_code",
+                idToken: result.idToken ?? null,
+                email: email ?? null,
+                userId: profile?.userId ?? null,
+                hasGrokCodeAccess: profile?.hasGrokCodeAccess ?? null,
+                subscriptionTier: profile?.subscriptionTier ?? null
+            }
+        });
+        return c.json({ status: AuthPollStatus.OK, provider: stored });
+    }
     if (provider === "cline") {
         if (!session.device_code) {
             await releaseOAuthSession(c.env.DB, state);
@@ -488,7 +553,7 @@ async function pollDeviceFlow(c, provider) {
     });
     return c.json({ status: AuthPollStatus.OK, provider: stored });
 }
-for (const p of ["cline", "codebuddy", "codebuddy-cn"]) {
+for (const p of ["cline", "codebuddy", "codebuddy-cn", "grok-cli"]) {
     oauthRoutes.get(`/${p}/device`, requireAdmin, (c) => initiateDeviceFlow(c, p));
     oauthRoutes.get(`/${p}/poll`, requireAdmin, (c) => pollDeviceFlow(c, p));
     oauthRoutes.post(`/${p}/poll`, requireAdmin, (c) => pollDeviceFlow(c, p));

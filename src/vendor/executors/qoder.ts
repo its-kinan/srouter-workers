@@ -26,6 +26,7 @@ import type {
 } from "../types/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 /**
  * ============================================================================
@@ -60,6 +61,8 @@ export interface QoderExecutorOptions {
     accessToken?: string;
     refreshToken?: string;
     providerSpecificData?: QoderProviderSpecificData;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 /**
@@ -410,6 +413,7 @@ export class QoderExecutor implements AIProvider {
     private refreshToken?: string;
     private providerSpecificData: QoderProviderSpecificData;
     private rawConfigs: Map<string, Record<string, unknown>> = new Map();
+    private stealth?: StealthHeaders;
 
     constructor(options: QoderExecutorOptions = {}) {
         this.id = options.id ?? "qoder";
@@ -419,6 +423,7 @@ export class QoderExecutor implements AIProvider {
         this.accessToken = options.accessToken ?? "";
         this.refreshToken = options.refreshToken;
         this.providerSpecificData = options.providerSpecificData ?? {};
+        this.stealth = options.stealth;
     }
 
     updateToken(accessToken: string, refreshToken?: string): void {
@@ -660,15 +665,20 @@ export class QoderExecutor implements AIProvider {
             machineId: creds.machineId
         });
 
-        const headers = {
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
-            "Cache-Control": "no-cache",
-            "X-Model-Key": qoderKey,
-            "X-Model-Source": (modelConfig.source as string) || "system",
-            "Accept-Encoding": "identity",
-            ...cosyHeaders
-        };
+        // Stealth preset fills gaps; executor defaults apply; per-credential
+        // overrides win. Signed cosyHeaders go last — signatures must not break.
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                "Cache-Control": "no-cache",
+                "X-Model-Key": qoderKey,
+                "X-Model-Source": (modelConfig.source as string) || "system",
+                "Accept-Encoding": "identity"
+            },
+            this.stealth
+        );
+        Object.assign(headers, cosyHeaders);
 
         const res = await FetchWithBudget(
             url,

@@ -33,6 +33,7 @@ import {
 import { OpenAIExecutor } from "./openai.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { fetchWithRetry } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 export interface AntigravityExecutorOptions {
     id?: string;
@@ -44,6 +45,8 @@ export interface AntigravityExecutorOptions {
     projectId?: string;
     enabledCreditTypes?: string[];
     creditsMode?: "never" | "on_demand" | "always";
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 /**
@@ -77,6 +80,7 @@ export class AntigravityExecutor implements AIProvider {
     private creditsMode: "never" | "on_demand" | "always";
     private remainingCredits?: Array<{ creditType: string; creditAmount: string }>;
     private openaiFallback: OpenAIExecutor;
+    private stealth?: StealthHeaders;
 
     constructor(options: AntigravityExecutorOptions = {}) {
         this.id = options.id ?? "antigravity";
@@ -89,12 +93,14 @@ export class AntigravityExecutor implements AIProvider {
         this.sessionId = generateSessionId();
         this.enabledCreditTypes = options.enabledCreditTypes;
         this.creditsMode = options.creditsMode ?? "on_demand";
+        this.stealth = options.stealth;
         this.openaiFallback = new OpenAIExecutor({
             id: this.id,
             name: this.name,
             baseUrl: options.baseUrl || ANTIGRAVITY_BASE_URL,
             apiKey: options.apiKey,
-            accessToken: this.accessToken
+            accessToken: this.accessToken,
+            stealth: this.stealth
         });
     }
 
@@ -114,10 +120,13 @@ export class AntigravityExecutor implements AIProvider {
     }
 
     private getHeaders(extra?: Record<string, string>): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

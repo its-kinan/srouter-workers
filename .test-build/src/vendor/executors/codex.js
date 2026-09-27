@@ -3,6 +3,7 @@ import { accumulateChunks, ChatToResponsesBody, CreateResponsesStreamState, Norm
 import { parseDataLine, streamLines } from "./base.js";
 import { extractSseErrorMessage, MODEL_CAPACITY_MESSAGE } from "./sse.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth } from "../../providers/fingerprints.js";
 const CODEX_CLIENT_VERSION = "0.136.0";
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -58,6 +59,7 @@ export class CodexExecutor {
     accountId;
     sessionId;
     _currentSessionId = null;
+    stealth;
     constructor(options = {}) {
         this.id = options.id ?? "openai_codex";
         this.name = options.name ?? "OpenAI Codex / ChatGPT";
@@ -68,6 +70,7 @@ export class CodexExecutor {
         this.refreshToken = options.refreshToken;
         this.accountId = options.accountId;
         this.sessionId = options.sessionId;
+        this.stealth = options.stealth;
     }
     /**
      * Update tokens after a refresh — called by TokenRefreshService.
@@ -79,12 +82,12 @@ export class CodexExecutor {
             this.refreshToken = refreshToken;
     }
     getHeaders(extra) {
-        const headers = {
+        const headers = applyStealth({
             "Content-Type": "application/json",
             originator: "codex_cli_rs",
             "User-Agent": `codex_cli_rs/${CODEX_CLIENT_VERSION}`,
             session_id: this.sessionId || this._currentSessionId || this.id || "default"
-        };
+        }, this.stealth);
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

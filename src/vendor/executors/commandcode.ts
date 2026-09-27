@@ -18,6 +18,7 @@ import {
 } from "../translator/index.js";
 import { parseDataLine, streamLines } from "./base.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 export interface CommandCodeExecutorOptions {
     id?: string;
@@ -25,6 +26,8 @@ export interface CommandCodeExecutorOptions {
     baseUrl?: string;
     apiKey?: string;
     accessToken?: string;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 export class CommandCodeExecutor implements AIProvider {
@@ -33,6 +36,7 @@ export class CommandCodeExecutor implements AIProvider {
     private baseUrl: string;
     private apiKey: string;
     private accessToken: string;
+    private stealth?: StealthHeaders;
 
     constructor(options: CommandCodeExecutorOptions = {}) {
         this.id = options.id ?? "commandcode";
@@ -40,15 +44,19 @@ export class CommandCodeExecutor implements AIProvider {
         this.baseUrl = (options.baseUrl ?? COMMANDCODE_BASE_URL).replace(/\/$/, "");
         this.apiKey = options.apiKey ?? "";
         this.accessToken = options.accessToken ?? "";
+        this.stealth = options.stealth;
     }
 
     private getHeaders(): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "x-command-code-version": "0.25.7",
-            "x-cli-environment": "cli",
-            "x-session-id": randomUUID()
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                "x-command-code-version": "0.25.7",
+                "x-cli-environment": "cli",
+                "x-session-id": randomUUID()
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

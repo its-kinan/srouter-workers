@@ -34,6 +34,8 @@ const NOT_READY =
     "gemini-cli transport not implemented in Phase 1 (see src/providers/geminicli.ts). " +
     "Tracked for Phase 2: cloudcode-pa Gemini transport sharing the Antigravity translator plumbing.";
 
+import type { StealthHeaders } from "./fingerprints.js";
+
 export interface GeminiCliAdapterOptions {
     id?: string;
     name?: string;
@@ -41,6 +43,8 @@ export interface GeminiCliAdapterOptions {
     accessToken?: string;
     refreshToken?: string;
     projectId?: string;
+    /** Stealth fingerprint bundle from the registry (unused until transport lands). */
+    stealth?: StealthHeaders;
 }
 
 export class GeminiCliAdapter {

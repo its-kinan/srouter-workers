@@ -20,6 +20,7 @@ import {
 import { parseDataLine, streamLines } from "./base.js";
 import { extractSseErrorMessage, MODEL_CAPACITY_MESSAGE } from "./sse.js";
 import { FetchWithBudget } from "./retry.js";
+import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 export interface CodexExecutorOptions {
     id?: string;
@@ -30,6 +31,8 @@ export interface CodexExecutorOptions {
     refreshToken?: string;
     accountId?: string;
     sessionId?: string;
+    /** Stealth fingerprint bundle from the registry. */
+    stealth?: StealthHeaders;
 }
 
 const CODEX_CLIENT_VERSION = "0.136.0";
@@ -90,6 +93,7 @@ export class CodexExecutor implements AIProvider {
     private accountId?: string;
     private sessionId?: string;
     private _currentSessionId: string | null = null;
+    private stealth?: StealthHeaders;
 
     constructor(options: CodexExecutorOptions = {}) {
         this.id = options.id ?? "openai_codex";
@@ -104,6 +108,7 @@ export class CodexExecutor implements AIProvider {
         this.refreshToken = options.refreshToken;
         this.accountId = options.accountId;
         this.sessionId = options.sessionId;
+        this.stealth = options.stealth;
     }
 
     /**
@@ -115,12 +120,15 @@ export class CodexExecutor implements AIProvider {
     }
 
     private getHeaders(extra?: Record<string, string>): Record<string, string> {
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            originator: "codex_cli_rs",
-            "User-Agent": `codex_cli_rs/${CODEX_CLIENT_VERSION}`,
-            session_id: this.sessionId || this._currentSessionId || this.id || "default"
-        };
+        const headers: Record<string, string> = applyStealth(
+            {
+                "Content-Type": "application/json",
+                originator: "codex_cli_rs",
+                "User-Agent": `codex_cli_rs/${CODEX_CLIENT_VERSION}`,
+                session_id: this.sessionId || this._currentSessionId || this.id || "default"
+            },
+            this.stealth
+        );
         const token = this.accessToken || this.apiKey;
         if (token) {
             headers["Authorization"] = `Bearer ${token}`;

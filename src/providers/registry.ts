@@ -30,6 +30,11 @@ import { GrokCliExecutor } from "./grokcli.js";
 import { GeminiCliAdapter } from "./geminicli.js";
 import { decryptSecretsObject } from "../crypto/secretbox.js";
 import {
+    parseOperatorOverrides,
+    stealthForAccount,
+    type StealthHeaders
+} from "./fingerprints.js";
+import {
     asAdapter,
     routingPrefixes,
     type DecryptedAccount,
@@ -108,8 +113,16 @@ export function providerAlias(providerType: string, rowAlias?: string | null): s
 }
 
 function buildExecutor(
-    account: DecryptedAccount
+    account: DecryptedAccount,
+    operatorOverrides?: Record<string, string> | null
 ): AIProvider | GeminiCliAdapter | GrokCliExecutor {
+    // Stealth fingerprint bundle: provider preset (+ operator overrides) as
+    // defaults, per-credential custom_headers winning over executor defaults.
+    const stealth: StealthHeaders = stealthForAccount(
+        account.providerType,
+        account.customHeaders,
+        operatorOverrides
+    );
     const common = {
         id: account.id,
         name: account.name,
@@ -117,7 +130,8 @@ function buildExecutor(
         apiKey: account.apiKey,
         accessToken: account.accessToken,
         refreshToken: account.refreshToken,
-        accountId: account.accountId
+        accountId: account.accountId,
+        stealth
     };
     switch (account.providerType) {
         case "antigravity":
@@ -249,8 +263,11 @@ export interface RoutedAccount {
     adapter: ProviderAdapter;
 }
 
-export function buildAdapter(account: DecryptedAccount): ProviderAdapter {
-    const executor = buildExecutor(account);
+export function buildAdapter(
+    account: DecryptedAccount,
+    operatorOverrides?: Record<string, string> | null
+): ProviderAdapter {
+    const executor = buildExecutor(account, operatorOverrides);
     return asAdapter(executor as AIProvider, account.id);
 }
 

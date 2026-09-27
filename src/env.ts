@@ -24,4 +24,8 @@ export interface Env {
     SEARXNG_URL?: string;
     /** App environment label, e.g. "production". */
     ENVIRONMENT?: string;
+    /** Optional JSON for operator-level stealth header overrides.
+     * Shape: { "<providerType>": { "Header": "value" }, ... } or flat
+     * { "Header": "value" } applied to all providers. Never logged. */
+    STEALTH_HEADER_OVERRIDES?: string;
 }
