@@ -1,0 +1,1 @@
+const r=t=>s=>typeof s=="string"&&s.startsWith(t),e=r("--"),i=r("var(--"),a=t=>i(t)?n.test(t.split("/*")[0].trim()):!1,n=/var\(--(?:[\w-]+\s*|[\w-]+\s*,(?:\s*[^)(\s]|\s*\((?:[^)(]|\([^)(]*\))*\))+\s*)\)$/iu;function o(t){return typeof t!="string"?!1:t.split("/*")[0].includes("var(--")}export{o as containsCSSVariable,e as isCSSVariableName,a as isCSSVariableToken};

@@ -1,0 +1,1 @@
+const n=(t,e,r)=>r>e?e:r<t?t:r;export{n as clamp};

@@ -1,0 +1,1 @@
+import{r as o}from"./sr-BaQ6fH3cvQLq.js";const e=768;function a(){const[r,n]=o.useState(void 0);return o.useEffect(()=>{const t=window.matchMedia(`(max-width: ${e-1}px)`),i=()=>{n(window.innerWidth<e)};return t.addEventListener("change",i),n(window.innerWidth<e),()=>t.removeEventListener("change",i)},[]),!!r}export{a as useMobile};

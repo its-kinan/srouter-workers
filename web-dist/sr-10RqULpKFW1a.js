@@ -1,0 +1,1 @@
+import{clamp as s}from"./sr-B8rI8T6DHlfD.js";const f=1;function a(n,t){return Math.max(0,n-t)}function u(n,t){if(t<=0)return 0;const r=s(n,0,t),e=r,c=t-r,o=e<=f,i=c<=f;return o&&i?e<=c?0:t:o?0:i?t:r}export{f as SCROLL_EDGE_TOLERANCE_PX,a as getMaxScrollOffset,u as normalizeScrollOffset};

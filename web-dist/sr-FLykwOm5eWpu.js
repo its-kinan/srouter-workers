@@ -1,0 +1,1 @@
+import{EMPTY_OBJECT as r}from"./sr-DuCe-TBEUl3O.js";import{DISABLED_TRANSITIONS_STYLE as o}from"./sr-D_LT-qMprf_w.js";function T(t){return t==="starting"?o:r}export{T as getDisabledMountTransitionStyles};

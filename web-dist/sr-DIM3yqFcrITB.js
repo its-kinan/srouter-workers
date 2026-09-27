@@ -1,0 +1,1 @@
+const t=(r,e)=>e?r===e?!0:t(r,e.parentElement):!1;export{t as isNodeOrChild};

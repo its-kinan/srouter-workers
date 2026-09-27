@@ -1,0 +1,1 @@
+import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{useUniqueId as o}from"./sr-D415uZgNhv3Y.js";var c=t.createContext(void 0),l=e=>{var a=e.id,d=e.type,i=e.children,r=o("recharts-".concat(d),a);return t.createElement(c.Provider,{value:r},i(r))};export{l as RegisterGraphicalItemId};

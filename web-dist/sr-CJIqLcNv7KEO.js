@@ -1,0 +1,1 @@
+function n(t){return t!==null&&typeof t=="object"&&typeof t.start=="function"}export{n as isAnimationControls};

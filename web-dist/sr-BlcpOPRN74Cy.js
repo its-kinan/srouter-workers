@@ -1,0 +1,1 @@
+import{lowerPlatform as t,lowerUserAgent as n,maxTouchPoints as i}from"./sr-DNQXzITT6bAX.js";const s=/^i(os$|p)/.test(t)||t==="macintel"&&i>1,o="android",c=t===o||n.includes(o),r=!s&&t.startsWith("mac");t.startsWith("win");const e=r||s;export{c as android,e as apple,s as ios,r as mac};

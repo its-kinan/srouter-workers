@@ -1,0 +1,1 @@
+const $=([c,e,i,r])=>`cubic-bezier(${c}, ${e}, ${i}, ${r})`;export{$ as cubicBezierAsString};

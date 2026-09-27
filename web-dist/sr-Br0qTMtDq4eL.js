@@ -1,0 +1,1 @@
+let i=(function(t){return t.startingStyle="data-starting-style",t.endingStyle="data-ending-style",t})({});const n={"data-starting-style":""},e={"data-ending-style":""},r={transitionStatus(t){return t==="starting"?n:t==="ending"?e:null}};export{i as TransitionStatusDataAttributes,r as transitionStatusMapping};

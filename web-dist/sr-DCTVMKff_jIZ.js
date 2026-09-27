@@ -1,0 +1,1 @@
+import{r as i}from"./sr-BaQ6fH3cvQLq.js";import{useReactFlow as n}from"./sr-BVKN3Vt_xkPA.js";function c({providerCount:e}){const{fitView:t}=n();return i.useEffect(()=>{const o=setTimeout(()=>{t({padding:.22,duration:250})},50),r=setTimeout(()=>{t({padding:.22})},250);return()=>{clearTimeout(o),clearTimeout(r)}},[t,e]),null}export{c as AutoCenterOnMount};

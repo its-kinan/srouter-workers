@@ -1,0 +1,1 @@
+import{svgPropertiesNoEventsFromUnknown as N}from"./sr-CxPGwvEL3pEc.js";function v(n){var o=N(n),i=3,u=2;if(o!=null){var s=o.r,e=o.strokeWidth,r=Number(s),t=Number(e);return(Number.isNaN(r)||r<0)&&(r=i),(Number.isNaN(t)||t<0)&&(t=u),{r,strokeWidth:t}}return{r:i,strokeWidth:u}}export{v as getRadiusAndStrokeWidthFromDot};

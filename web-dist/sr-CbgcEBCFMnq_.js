@@ -1,0 +1,1 @@
+import{FloatingRootStore as e}from"./sr-WKnaRHDewRlJ.js";import{PopupTriggerMap as n}from"./sr-CR02kU0eKSNN.js";function r(){return new e({open:!1,transitionStatus:void 0,floatingElement:null,referenceElement:null,triggerElements:new n,floatingId:void 0,syncOnly:!1,nested:!1,onOpenChange:void 0})}export{r as getEmptyRootContext};

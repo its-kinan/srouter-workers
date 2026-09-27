@@ -1,0 +1,1 @@
+import{clamp as a}from"./sr-CAH81ajuZs1Q.js";const r={test:t=>typeof t=="number",parse:parseFloat,transform:t=>t},e={...r,transform:t=>a(0,1,t)},s={...r,default:1};export{e as alpha,r as number,s as scale};

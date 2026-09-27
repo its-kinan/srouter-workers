@@ -1,0 +1,1 @@
+import{isControllingVariants as r}from"./sr-CEi6KFPAQmQV.js";import{isVariantLabel as e}from"./sr-CahS11DatQl3.js";function o(i,a){if(r(i)){const{initial:n,animate:t}=i;return{initial:n===!1||e(n)?n:void 0,animate:e(t)?t:void 0}}return i.inherit!==!1?a:{}}export{o as getCurrentTreeVariants};

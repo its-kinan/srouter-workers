@@ -1,0 +1,1 @@
+function e(n){return n==="codebuddy-cn"?"codebuddy-cn":n.split("_")[0].split("-")[0]}function i(n){return n.split(/\r?\n/).map(t=>t.trim()).filter(Boolean)}export{e as authProviderIdOf,i as splitTokenLines};

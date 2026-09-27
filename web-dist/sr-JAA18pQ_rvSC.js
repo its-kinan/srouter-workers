@@ -1,0 +1,1 @@
+const e=r=>Array.isArray(r)&&typeof r[0]=="number";export{e as isBezierDefinition};

@@ -1,0 +1,1 @@
+import{r as n}from"./sr-BaQ6fH3cvQLq.js";import{SafeReact as f}from"./sr-D7wyc-_qLmyC.js";let o=0;function l(u,t="mui"){const[e,a]=n.useState(u),c=u||e;return n.useEffect(()=>{e==null&&(o+=1,a(`${t}-${o}`))},[e,t]),c}const s=f.useId;function I(u,t){if(s!==void 0){const e=s();return u??(t?`${t}-${e}`:e)}return l(u,t)}export{I as useId};

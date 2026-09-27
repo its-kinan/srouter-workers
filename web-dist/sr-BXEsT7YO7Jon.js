@@ -1,0 +1,1 @@
+import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{s as u}from"./sr-BtDLmW7b9LXt.js";import{NOOP as i}from"./sr-DuCe-TBEUl3O.js";function n(r){const o=t.useCallback(e=>r===void 0?i:r.subscribeStore(e),[r]),s=t.useCallback(()=>r===void 0?void 0:r.store,[r]);return u.useSyncExternalStore(o,s,()=>r==null?void 0:r.serverStore)}export{n as usePopupHandleStore};

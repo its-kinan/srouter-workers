@@ -1,0 +1,1 @@
+function e(t,r,s,a){return typeof r=="number"?r:r.startsWith("-")||r.startsWith("+")?Math.max(0,t+parseFloat(r)):r==="<"?s:r.startsWith("<")?Math.max(0,s+parseFloat(r.slice(1))):a.get(r)??t}export{e as calcNextTime};

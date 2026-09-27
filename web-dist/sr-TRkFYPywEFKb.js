@@ -1,0 +1,1 @@
+const t=({current:e})=>e?e.ownerDocument.defaultView:null;export{t as getContextWindow};

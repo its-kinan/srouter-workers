@@ -1,0 +1,1 @@
+import{createSelector as o}from"./sr-B5wKPfy43Tya.js";import{selectChartWidth as r,selectChartHeight as l,selectMargin as c}from"./sr-vh95y6rL9Y9n.js";var f=o([r,l,c],(e,h,t)=>({x:t.left||0,y:t.top||0,width:Math.max(e-(t.left||0)-(t.right||0),0),height:Math.max(h-(t.top||0)-(t.bottom||0),0)}));export{f as selectLegendArea};

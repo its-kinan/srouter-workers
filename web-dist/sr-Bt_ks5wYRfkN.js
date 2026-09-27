@@ -1,0 +1,1 @@
+import{mixNumber as e}from"./sr-ChzjNjzE2A6H.js";import{progress as f}from"./sr-DC5K1vta-AGF.js";function l(o,t){const s=o[o.length-1];for(let r=1;r<=t;r++){const m=f(0,t,r);o.push(e(s,1,m))}}export{l as fillOffset};

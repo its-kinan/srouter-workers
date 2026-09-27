@@ -1,0 +1,1 @@
+const e={current:null},n={current:!1};export{n as hasReducedMotionListener,e as prefersReducedMotion};

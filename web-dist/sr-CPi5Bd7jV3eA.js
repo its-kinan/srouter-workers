@@ -1,0 +1,1 @@
+function d(e){return(e%180+180)%180}var s=function(n){var t=n.width,g=n.height,r=arguments.length>1&&arguments[1]!==void 0?arguments[1]:0,i=d(r),a=i*Math.PI/180,h=Math.atan(g/t),l=a>h&&a<Math.PI-h?g/Math.sin(a):t/Math.cos(a);return Math.abs(l)};export{s as getAngledRectangleWidth,d as normalizeAngle};

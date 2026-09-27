@@ -1,0 +1,1 @@
+import{sqrt as o}from"./sr-BN6eEeDR2_GD.js";const r={draw(i,T){const l=o(T/5)/2;i.moveTo(-3*l,-l),i.lineTo(-l,-l),i.lineTo(-l,-3*l),i.lineTo(l,-3*l),i.lineTo(l,-l),i.lineTo(3*l,-l),i.lineTo(3*l,l),i.lineTo(l,l),i.lineTo(l,3*l),i.lineTo(-l,3*l),i.lineTo(-l,l),i.lineTo(-3*l,l),i.closePath()}};export{r as default};

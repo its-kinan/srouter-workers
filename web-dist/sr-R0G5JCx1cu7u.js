@@ -1,0 +1,1 @@
+import{createCategoricalInverse as t}from"./sr-QRjYr02IaH3L.js";function r(n){if(n!=null)return"invert"in n&&typeof n.invert=="function"?n.invert.bind(n):t(n,void 0)}export{r as combineInverseScaleFunction};

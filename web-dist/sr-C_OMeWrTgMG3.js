@@ -1,0 +1,1 @@
+var v=(u,a,d,o,r,n,l)=>{if(n!=null){var i=l[0],t=i==null?void 0:i.getPosition(n);if(t!=null)return t;var e=r==null?void 0:r[Number(n)];if(e)switch(d){case"horizontal":return{x:e.coordinate,y:(o.top+a)/2};default:return{x:(o.left+u)/2,y:e.coordinate}}}};export{v as combineCoordinateForDefaultIndex};

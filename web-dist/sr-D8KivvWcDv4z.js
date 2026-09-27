@@ -1,0 +1,1 @@
+const e=(r,t)=>t&&typeof r=="number"?t.transform(r):r;export{e as getValueAsType};

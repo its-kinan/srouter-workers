@@ -1,0 +1,1 @@
+var _="data-recharts-item-index",T="data-recharts-item-id",A=60,I=30;export{T as DATA_ITEM_GRAPHICAL_ITEM_ID_ATTRIBUTE_NAME,_ as DATA_ITEM_INDEX_ATTRIBUTE_NAME,I as DEFAULT_X_AXIS_HEIGHT,A as DEFAULT_Y_AXIS_WIDTH};

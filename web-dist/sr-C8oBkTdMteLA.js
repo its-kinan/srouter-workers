@@ -1,0 +1,1 @@
+const d=/-?(?:\d+(?:\.\d+)?|\.\d+)/gu;export{d as floatRegex};

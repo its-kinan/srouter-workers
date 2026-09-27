@@ -1,0 +1,1 @@
+class t{constructor(){this.updateFinished()}get finished(){return this._finished}updateFinished(){this._finished=new Promise(i=>{this.resolve=i})}notifyFinished(){this.resolve()}then(i,e){return this.finished.then(i,e)}}export{t as WithPromise};

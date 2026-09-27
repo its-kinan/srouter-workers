@@ -1,0 +1,1 @@
+function m(e,t){return i=>i>0?t:e}export{m as mixImmediate};

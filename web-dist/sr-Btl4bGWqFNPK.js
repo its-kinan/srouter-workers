@@ -1,0 +1,1 @@
+const e="https://api.b.ai/v1",s={id:"bai",name:"B.AI",category:"free_tier",protocol:"openai",alias:"bai",base_url:e,web_url:"https://b.ai",requires_api_key:!0,supports_custom_url:!0,status_message:"B.AI API key missing"};export{e as BAI_BASE_URL,s as BAI_PROVIDER};

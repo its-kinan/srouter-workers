@@ -1,0 +1,1 @@
+import{getStackSeriesIdentifier as f}from"./sr-DJovKt8fcyss.js";var c=(r,e)=>{var n=f(e);if(!(!r||n==null||e==null)){var a=e.stackId;if(a!=null){var d=r[a];if(d){var t=d.stackedData;if(t)return t.find(i=>i.key===n)}}}};export{c as combineStackedData};

@@ -1,0 +1,1 @@
+const e="https://api.experientiallabs.ai/v1",a={id:"experientiallabs",name:"Experiential Labs",category:"api_key",protocol:"openai",base_url:e,web_url:"https://platform.experientiallabs.ai",alias:"explabs",requires_api_key:!0,supports_custom_url:!0,status_message:"Experiential Labs API key missing"};export{e as EXPERIENTIALLABS_BASE_URL,a as EXPERIENTIALLABS_PROVIDER};

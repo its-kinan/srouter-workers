@@ -1,0 +1,1 @@
+function v(a,t){var r;if(a==="start"&&t==="start")return"";var e={start:"0",middle:"-50%",end:"-100%"},n={start:"0",middle:"-50%",end:"-100%"},l=a==="inherit"?"0":e[a],s=(r=n[t])!==null&&r!==void 0?r:"0";return"translate(".concat(l,", ").concat(s,")")}export{v as cartesianPositionToCSSTranslate};

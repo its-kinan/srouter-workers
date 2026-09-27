@@ -1,0 +1,1 @@
+const n=r=>Array.isArray(r)&&typeof r[0]!="number";export{n as isEasingArray};

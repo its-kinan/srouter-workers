@@ -1,0 +1,1 @@
+const e="https://api.tokenrouter.com/v1",t={id:"tokenrouter",name:"TokenRouter",category:"api_key",protocol:"openai",base_url:e,web_url:"https://tokenrouter.com",requires_api_key:!0,supports_custom_url:!0,status_message:"TokenRouter API key missing"};export{e as TOKENROUTER_BASE_URL,t as TOKENROUTER_PROVIDER};

@@ -1,0 +1,1 @@
+import y,{gamma as e}from"./sr-BIB_jH8Ry7Wt.js";import{rgb as c}from"./sr-lo_jZ-D1W4dx.js";const x=(function a(b){var g=e(b);function i(o,r){var n=g((o=c(o)).r,(r=c(r)).r),p=g(o.g,r.g),u=g(o.b,r.b),f=y(o.opacity,r.opacity);return function(m){return o.r=n(m),o.g=p(m),o.b=u(m),o.opacity=f(m),o+""}}return i.gamma=a,i})(1);export{x as default};

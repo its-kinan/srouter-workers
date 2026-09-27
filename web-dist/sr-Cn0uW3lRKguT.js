@@ -1,0 +1,1 @@
+const f={offset:"stroke-dashoffset",array:"stroke-dasharray"},h={offset:"strokeDashoffset",array:"strokeDasharray"};function y(s,e,o=1,r=0,t=!0){s.pathLength=1;const a=t?f:h;s[a.offset]=`${-r}`,s[a.array]=`${e} ${o}`}export{y as buildSVGPath};

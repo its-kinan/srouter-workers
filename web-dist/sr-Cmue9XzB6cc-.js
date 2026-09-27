@@ -1,0 +1,1 @@
+const o={test:t=>t==="auto",parse:t=>t};export{o as auto};

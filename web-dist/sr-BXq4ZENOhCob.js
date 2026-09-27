@@ -1,0 +1,1 @@
+import{createMotionComponent as r}from"./sr-CHcIrkyGgX5S.js";function a(e,c){if(typeof Proxy>"u")return r;const o=new Map,i=(n,t)=>r(n,t,e,c),f=(n,t)=>i(n,t);return new Proxy(f,{get:(n,t)=>t==="create"?i:(o.has(t)||o.set(t,r(t,void 0,e,c)),o.get(t))})}export{a as createMotionProxy};

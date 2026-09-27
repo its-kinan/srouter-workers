@@ -1,0 +1,1 @@
+import e from"./sr-DbCXVGTeA_lX.js";import{r as t}from"./sr-BaQ6fH3cvQLq.js";const n=t.createContext(void 0);function a(r){const o=t.useContext(n);if(!r&&o===void 0)throw new Error(e(27));return o}export{n as DialogRootContext,a as useDialogRootContext};

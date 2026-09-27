@@ -1,0 +1,1 @@
+const t=(e,p)=>e.depth-p.depth;export{t as compareByDepth};

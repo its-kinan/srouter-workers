@@ -1,0 +1,1 @@
+import r from"./sr-BaQ6fH3cvQLq.js";import{j as n}from"./sr-BA3axRHy0uMV.js";function c({children:t,fallback:e=null}){return n.jsx(r.Fragment,{children:u()?t:e})}function u(){return r.useSyncExternalStore(o,()=>!0,()=>!1)}function o(){return()=>{}}export{c as ClientOnly,u as useHydrated};

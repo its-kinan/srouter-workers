@@ -1,0 +1,1 @@
+const i="https://api.minimax.io/v1",t={id:"minimax",name:"MiniMax",category:"api_key",protocol:"openai",base_url:i,web_url:"https://platform.minimax.io",requires_api_key:!0,supports_custom_url:!0,status_message:"MiniMax API key missing"};export{i as MINIMAX_BASE_URL,t as MINIMAX_PROVIDER};

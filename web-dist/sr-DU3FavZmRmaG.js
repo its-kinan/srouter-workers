@@ -1,0 +1,1 @@
+import o from"./sr-DbCXVGTeA_lX.js";import{r as e}from"./sr-BaQ6fH3cvQLq.js";const r=e.createContext(void 0);function s(){const t=e.useContext(r);if(!t)throw new Error(o(57));return t}export{r as SelectItemContext,s as useSelectItemContext};

@@ -1,0 +1,1 @@
+import{r as a}from"./sr-BaQ6fH3cvQLq.js";import{uniqueId as u}from"./sr-Bi642uW1naG8.js";function m(r){var e=arguments.length>1&&arguments[1]!==void 0?arguments[1]:"animation-",n=a.useRef(u(e)),t=a.useRef(r);return t.current!==r&&(n.current=u(e),t.current=r),n.current}export{m as useAnimationId};

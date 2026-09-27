@@ -1,0 +1,1 @@
+import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{SelectScrollArrow as e}from"./sr-DfASBJJSW0_F.js";import{j as c}from"./sr-BA3axRHy0uMV.js";const m=t.forwardRef(function(r,o){return c.jsx(e,{...r,ref:o,direction:"down"})});export{m as SelectScrollDownArrow};

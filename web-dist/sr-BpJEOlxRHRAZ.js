@@ -1,0 +1,1 @@
+class s{constructor(t){this.isMounted=!1,this.node=t}update(){}}export{s as Feature};

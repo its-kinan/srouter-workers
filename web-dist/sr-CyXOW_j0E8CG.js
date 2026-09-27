@@ -1,0 +1,1 @@
+function t(r){return typeof r=="object"&&!Array.isArray(r)}export{t as isDOMKeyframes};

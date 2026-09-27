@@ -1,0 +1,1 @@
+import{r as e}from"./sr-BaQ6fH3cvQLq.js";function l(o){const i=e.useRef(""),n=e.useCallback(r=>{r.defaultPrevented||(i.current=r.pointerType,o(r,r.pointerType))},[o]);return{onClick:e.useCallback(r=>{if(r.detail===0){o(r,"keyboard");return}"pointerType"in r?o(r,r.pointerType):o(r,i.current),i.current=""},[o]),onPointerDown:n}}export{l as useEnhancedClickHandler};

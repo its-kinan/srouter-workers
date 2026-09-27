@@ -1,0 +1,1 @@
+const s=t=>e=>e.test(t);export{s as testValueType};

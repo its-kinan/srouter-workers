@@ -1,0 +1,1 @@
+const u=(n,r)=>Object.is(n,r);function i(n,r,t){return n==null||r==null?Object.is(n,r):t(n,r)}function e(n,r,t){return!n||n.length===0?-1:n.findIndex(f=>f===void 0?!1:i(f,r,t))}function o(n,r,t){return n.filter(f=>!i(r,f,t))}export{i as compareItemEquality,u as defaultItemEquality,e as findItemIndex,o as removeItem};

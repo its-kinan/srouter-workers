@@ -1,0 +1,1 @@
+function n(r,e){return Array.isArray(r)&&Array.isArray(e)&&r.length===0&&e.length===0?!0:r===e}function u(r,e){if(r.length===e.length){for(var t=0;t<r.length;t++)if(r[t]!==e[t])return!1;return!0}return!1}export{u as arrayContentsAreEqualCheck,n as emptyArraysAreEqualCheck};

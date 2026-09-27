@@ -1,0 +1,1 @@
+import{fieldValidityMapping as r}from"./sr-C9_Rdzbn_4na.js";function n(e){return{checked(t){return e.indeterminate?{}:t?{"data-checked":""}:{"data-unchecked":""}},...r}}export{n as getCheckboxStateAttributesMapping};

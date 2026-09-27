@@ -1,0 +1,1 @@
+import{getMixer as m}from"./sr-C4uktOudtZgU.js";import{mixNumber as t}from"./sr-ChzjNjzE2A6H.js";function o(e,r,i){return typeof e=="number"&&typeof r=="number"&&typeof i=="number"?t(e,r,i):m(e)(e,r)}export{o as mix};

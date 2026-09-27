@@ -1,0 +1,1 @@
+const i=new Set;let e;function d(){e=()=>{const n={get width(){return window.innerWidth},get height(){return window.innerHeight}};i.forEach(t=>t(n))},window.addEventListener("resize",e)}function r(n){return i.add(n),e||d(),()=>{i.delete(n),!i.size&&typeof e=="function"&&(window.removeEventListener("resize",e),e=void 0)}}export{r as resizeWindow};

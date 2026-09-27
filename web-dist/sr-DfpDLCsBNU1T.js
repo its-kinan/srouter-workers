@@ -1,0 +1,1 @@
+import{useIsoLayoutEffect as r}from"./sr-DDdlbvx4veP-.js";import{useRefWithInit as n}from"./sr-CkbkB0lMlagg.js";function s(e){const t=n(f,e).current;return t.next=e,r(t.effect),t}function f(e){const t={current:e,next:e,effect:()=>{t.current=t.next}};return t}export{s as useValueAsRef};

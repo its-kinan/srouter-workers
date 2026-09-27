@@ -1,0 +1,1 @@
+const i={name:"hide",async fn(n){const{width:r,height:t,x:o,y:c}=n.rects.reference,d=r===0&&t===0&&o===0&&c===0,e=await n.platform.detectOverflow(n,{elementContext:"reference"});return{data:{referenceHidden:e.top-t>=0||e.right-r>=0||e.bottom-t>=0||e.left-r>=0||d}}}};export{i as hide};

@@ -1,0 +1,1 @@
+const t=/^(?:0|[1-9]\d*)$/;function s(e,r=Number.MAX_SAFE_INTEGER){switch(typeof e){case"number":return Number.isInteger(e)&&e>=0&&e<r;case"symbol":return!1;case"string":return t.test(e)}}export{s as isIndex};

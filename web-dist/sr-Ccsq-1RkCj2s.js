@@ -1,0 +1,1 @@
+import{r as e}from"./sr-BaQ6fH3cvQLq.js";import"./sr-BA3axRHy0uMV.js";const n=e.createContext(null),r=e.createContext(null),a=()=>{var t;return((t=e.useContext(n))==null?void 0:t.id)||null},c=t=>{const o=e.useContext(r);return t??o};export{a as useFloatingParentNodeId,c as useFloatingTree};

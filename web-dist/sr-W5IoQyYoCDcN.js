@@ -1,0 +1,1 @@
+import{r as n}from"./sr-BaQ6fH3cvQLq.js";import{MotionContext as i}from"./sr-Cgm4SdcKi_cp.js";import{getCurrentTreeVariants as a}from"./sr-D-ImcWvfAaL7.js";function c(t){const{initial:e,animate:r}=a(t,n.useContext(i));return n.useMemo(()=>({initial:e,animate:r}),[o(e),o(r)])}function o(t){return Array.isArray(t)?t.join(" "):t}export{c as useCreateMotionContext};

@@ -1,0 +1,1 @@
+import{transformProps as i}from"./sr-BV7QdskxcmbL.js";import{scaleCorrectors as n}from"./sr-Bx3ebWj5rCTa.js";function c(r,{layout:o,layoutId:t}){return i.has(r)||r.startsWith("origin")||(o||t!==void 0)&&(!!n[r]||r==="opacity")}export{c as isForcedMotionValue,n as scaleCorrectors};

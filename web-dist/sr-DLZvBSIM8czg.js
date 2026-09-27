@@ -1,0 +1,1 @@
+import{analyseComplexValue as l}from"./sr-DuslXiQiYNkO.js";import{getAnimatableNone as m}from"./sr-BLCEUrJOzbxC.js";const f=new Set(["auto","none","0"]);function g(e,i,o){let n=0,a;for(;n<e.length&&!a;){const t=e[n];typeof t=="string"&&!f.has(t)&&l(t).values.length&&(a=e[n]),n++}if(a&&o)for(const t of i)e[t]=m(o,a)}export{g as makeNoneKeyframesAnimatable};

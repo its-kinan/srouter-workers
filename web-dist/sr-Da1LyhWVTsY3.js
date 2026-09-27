@@ -1,0 +1,1 @@
+import{r as c}from"./sr-BaQ6fH3cvQLq.js";import{useIsoLayoutEffect as n}from"./sr-DDdlbvx4veP-.js";import{useStableCallback as a}from"./sr-mORIqjeswCm7.js";function m(r,o){const t=c.useRef(r),e=a(o);n(()=>{t.current!==r&&e(t.current),t.current=r},[r,e])}export{m as useValueChanged};

@@ -1,0 +1,1 @@
+import{isDOMKeyframes as o}from"./sr-CyXOW_j0E8CG.js";import{resolveElements as l}from"./sr-d0GuORnZhC9J.js";function s(r,e,i,n){return r==null?[]:typeof r=="string"&&o(e)?l(r,i,n):r instanceof NodeList?Array.from(r):Array.isArray(r)?r.filter(f=>f!=null):[r]}export{s as resolveSubjects};

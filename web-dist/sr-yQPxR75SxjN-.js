@@ -1,0 +1,1 @@
+function f(n,e){const r={};for(const t in n){const o=n[t];if(e!=null&&e.hasOwnProperty(t)){const s=e[t](o);s!=null&&Object.assign(r,s);continue}o===!0?r[`data-${t.toLowerCase()}`]="":o&&(r[`data-${t.toLowerCase()}`]=o.toString())}return r}export{f as getStateAttributesProps};

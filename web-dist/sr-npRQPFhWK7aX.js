@@ -1,0 +1,1 @@
+import{r as e}from"./sr-BaQ6fH3cvQLq.js";import{useAppDispatch as o}from"./sr-DOIGHjJMcPRw.js";import{setEventSettings as p}from"./sr-DUo-RdWf-fx7.js";import{propsAreEqual as m}from"./sr-C9al3hAzG70W.js";var s=t=>{var r=o();return e.useEffect(()=>{r(p(t))},[r,t]),null},v=e.memo(s,m);export{v as ReportEventSettings};

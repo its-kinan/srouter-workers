@@ -1,0 +1,1 @@
+const o="ArrowUp",t="ArrowDown",n="ArrowLeft",R="ArrowRight",r="Home",A="End",O=new Set([o,t,n,R,r,"End"]);export{t as ARROW_DOWN,n as ARROW_LEFT,R as ARROW_RIGHT,o as ARROW_UP,O as COMPOSITE_KEYS,A as END,r as HOME};

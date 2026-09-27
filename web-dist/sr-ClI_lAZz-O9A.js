@@ -1,0 +1,1 @@
+import{transitionStatusMapping as p}from"./sr-Br0qTMtDq4eL.js";import{popupStateMapping as a}from"./sr-DbIAB7_zuuwF.js";const e={...a,...p,nestedDialogOpen(t){return t?{"data-nested-dialog-open":""}:null}};export{e as dialogStateAttributesMapping};

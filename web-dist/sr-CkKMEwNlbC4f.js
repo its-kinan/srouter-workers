@@ -1,0 +1,1 @@
+const a="https://api.neosantara.xyz/v1",e={id:"neosantara",name:"Neosantara",category:"api_key",protocol:"openai",base_url:a,web_url:"https://neosantara.xyz",requires_api_key:!0,supports_custom_url:!0,status_message:"Neosantara API key missing"};export{a as NEOSANTARA_BASE_URL,e as NEOSANTARA_PROVIDER};

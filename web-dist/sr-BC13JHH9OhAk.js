@@ -1,0 +1,1 @@
+import{inertia as p}from"./sr-BgG7ow5Lyb0W.js";import{keyframes as r}from"./sr-C1pA_1-1KnAJ.js";import{spring as t}from"./sr-CUq9tzoHFOqa.js";const o={decay:p,inertia:p,tween:r,keyframes:r,spring:t};function m(e){typeof e.type=="string"&&(e.type=o[e.type])}export{m as replaceTransitionType};

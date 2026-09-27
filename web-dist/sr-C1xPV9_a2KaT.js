@@ -1,0 +1,1 @@
+import{eq as i}from"./sr-DwmgP2QS1BFb.js";import{isArrayLike as m}from"./sr-ORlXWHXkZPRV.js";import{isObject as e}from"./sr-DcOn-JgGqgI5.js";import{isIndex as o}from"./sr-BZR8m6EygWG9.js";function n(f,r,t){return e(t)&&(typeof r=="number"&&m(t)&&o(r)&&r<t.length||typeof r=="string"&&r in t)?i(t[r],f):!1}export{n as isIterateeCall};

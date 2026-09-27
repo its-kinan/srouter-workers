@@ -1,0 +1,1 @@
+const t=["transformPerspective","x","y","z","translateX","translateY","translateZ","scale","scaleX","scaleY","rotate","rotateX","rotateY","rotateZ","skew","skewX","skewY"],e=new Set([...t,"pathRotation"]);export{t as transformPropOrder,e as transformProps};

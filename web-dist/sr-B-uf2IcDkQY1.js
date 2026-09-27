@@ -1,0 +1,1 @@
+import{isSymbol as i}from"./sr-DvWpiT-f0e9L.js";function f(r){return r==null?"":n(r)}function n(r){if(typeof r=="string")return r;if(Array.isArray(r))return r.map(n).join(",");if(i(r))return r.toString();const t=r+"";return t==="0"&&Object.is(Number(r),-0)?"-0":t}export{f as toString};

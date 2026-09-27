@@ -1,0 +1,1 @@
+class u{setTimeout(t){var n=arguments.length>1&&arguments[1]!==void 0?arguments[1]:0,m=performance.now(),e=null,a=r=>{r-m>=n?t(r):e=requestAnimationFrame(a)};return e=requestAnimationFrame(a),()=>{e!=null&&cancelAnimationFrame(e)}}}export{u as RequestAnimationFrameTimeoutController};

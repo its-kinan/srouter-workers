@@ -1,0 +1,1 @@
+import{DefaultGlobalNotFound as p}from"./sr-Dw-aruH-1jP5.js";import"./sr-BaQ6fH3cvQLq.js";import{j as o}from"./sr-BA3axRHy0uMV.js";function m(n,t,e){return t.options.notFoundComponent?o.jsx(t.options.notFoundComponent,{...e}):n.options.defaultNotFoundComponent?o.jsx(n.options.defaultNotFoundComponent,{...e}):o.jsx(p,{})}export{m as renderRouteNotFound};

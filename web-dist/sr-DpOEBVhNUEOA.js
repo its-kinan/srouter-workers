@@ -1,0 +1,1 @@
+import{camelToDash as i}from"./sr-CbZs6XphRFiF.js";import{renderHTML as m}from"./sr-dPt9P7WA-1W4.js";import{camelCaseAttributes as e}from"./sr-BgNxnTxrAfZA.js";function c(o,t,f,s){m(o,t,void 0,s);for(const r in t.attrs)o.setAttribute(e.has(r)?r:i(r),t.attrs[r])}export{c as renderSVG};

@@ -1,0 +1,1 @@
+const s=e=>r=>1-e(1-r);export{s as reverseEasing};

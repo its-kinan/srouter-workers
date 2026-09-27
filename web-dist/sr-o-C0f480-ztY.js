@@ -1,0 +1,1 @@
+import{keepPreviousData as r}from"./sr-BRaynJRDErPs.js";import{useQuery as t}from"./sr-C95jfZWDmN-a.js";import{Api as a}from"./sr-YQhrtj25hSAW.js";function p(e){return t({queryKey:["analytics",e],queryFn:()=>a.getAnalytics(e),placeholderData:r,refetchInterval:e==="1h"?1e4:6e4})}export{p as useAnalytics};

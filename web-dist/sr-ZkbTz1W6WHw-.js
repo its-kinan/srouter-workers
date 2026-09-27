@@ -1,0 +1,1 @@
+import{r as e}from"./sr-BaQ6fH3cvQLq.js";import{NOOP as r}from"./sr-DuCe-TBEUl3O.js";const t=e.createContext({elementRef:{current:null},formRef:{current:{fields:new Map}},errors:{},clearErrors:r,validationMode:"onSubmit",submitAttemptedRef:{current:!1}});function m(){return e.useContext(t)}export{t as FormContext,m as useFormContext};

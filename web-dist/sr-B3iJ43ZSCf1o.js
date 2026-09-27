@@ -1,0 +1,1 @@
+const d=t=>/^-?(?:\d+(?:\.\d+)?|\.\d+)$/u.test(t);export{d as isNumericalString};

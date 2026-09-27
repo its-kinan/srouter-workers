@@ -1,0 +1,1 @@
+const t=/\.|(\[(?:[^[\]]*|(["'])(?:(?!\2)[^\\]|\\.)*?\2)\])/;function s(e){switch(typeof e){case"number":case"symbol":return!1;case"string":return e===""||e.startsWith(".")||e.endsWith(".")?!1:t.test(e);default:return!1}}export{s as isDeepKey};

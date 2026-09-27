@@ -1,0 +1,1 @@
+function o(){return typeof navigator>"u"?{userAgent:"",platform:"",maxTouchPoints:0}:{userAgent:navigator.userAgent,platform:navigator.platform??"",maxTouchPoints:navigator.maxTouchPoints??0}}const{userAgent:t,platform:r,maxTouchPoints:a}=o(),e=t.toLowerCase(),n=r.toLowerCase();export{n as lowerPlatform,e as lowerUserAgent,a as maxTouchPoints};

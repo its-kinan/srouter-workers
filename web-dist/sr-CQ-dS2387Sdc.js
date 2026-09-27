@@ -1,0 +1,1 @@
+const t=o=>r=>r<=.5?o(2*r)/2:(2-o(2*(1-r)))/2;export{t as mirrorEasing};

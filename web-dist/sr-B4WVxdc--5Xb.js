@@ -1,0 +1,1 @@
+import{r as t}from"./sr-BaQ6fH3cvQLq.js";const e=t.createContext({register:()=>{},unregister:()=>{},subscribeMapChange:()=>()=>{},nextIndexRef:{current:0}});function o(){return t.useContext(e)}export{e as CompositeListContext,o as useCompositeListContext};

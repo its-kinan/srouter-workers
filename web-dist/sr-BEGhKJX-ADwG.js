@@ -1,0 +1,1 @@
+import{frameData as n}from"./sr-Bb_f7HUDDFq8.js";import{MotionGlobalConfig as i}from"./sr-pfzlwddINm0y.js";let e;function t(){e=void 0}const r={now:()=>(e===void 0&&r.set(n.isProcessing||i.useManualTiming?n.timestamp:performance.now()),e),set:o=>{e=o,queueMicrotask(t)}};export{r as time};

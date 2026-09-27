@@ -1,0 +1,1 @@
+function t(n){for(var e=n.length,r=new Array(e);--e>=0;)r[e]=e;return r}export{t as default};

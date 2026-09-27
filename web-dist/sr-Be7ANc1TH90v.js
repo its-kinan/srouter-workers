@@ -1,0 +1,1 @@
+import{r as n}from"./sr-BaQ6fH3cvQLq.js";import{isReactVersionAtLeast as o}from"./sr-CPSktOSpyKif.js";function c(r){if(!n.isValidElement(r))return null;const e=r,t=e.props;return(o(19)?t==null?void 0:t.ref:e.ref)??null}export{c as getReactElementRef};

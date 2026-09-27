@@ -1,0 +1,1 @@
+function o(e,t){return e.map(n=>n*t)}export{o as convertOffsetToTimes};

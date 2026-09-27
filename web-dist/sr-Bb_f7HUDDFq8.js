@@ -1,0 +1,1 @@
+import{createRenderBatcher as e}from"./sr-Dly_yFYAf18M.js";import{noop as r}from"./sr-B8b6aalUtVg6.js";const{schedule:m,cancel:n,state:o,steps:c}=e(typeof requestAnimationFrame<"u"?requestAnimationFrame:r,!0);export{n as cancelFrame,m as frame,o as frameData,c as frameSteps};

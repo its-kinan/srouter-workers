@@ -1,0 +1,1 @@
+const e={id:"anthropic",name:"Anthropic Claude",category:"oauth",protocol:"anthropic",alias:"claude",web_url:"https://claude.ai",requires_api_key:!1,requires_oauth:!0,status_message:"OAuth token missing"};export{e as ANTHROPIC_PROVIDER};

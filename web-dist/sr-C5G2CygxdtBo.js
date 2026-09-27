@@ -1,0 +1,1 @@
+import{createSelector as l}from"./sr-B5wKPfy43Tya.js";import{selectChartOffset as m}from"./sr-DlFGDQLtOfcf.js";import{selectChartWidth as a,selectChartHeight as i}from"./sr-vh95y6rL9Y9n.js";var p=l([m,a,i],(t,r,e)=>{if(!(!t||r==null||e==null))return{x:t.left,y:t.top,width:Math.max(0,r-t.left-t.right),height:Math.max(0,e-t.top-t.bottom)}});export{p as selectPlotArea};

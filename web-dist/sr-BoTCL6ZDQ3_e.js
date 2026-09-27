@@ -1,0 +1,1 @@
+var f=i=>{var e=i.ticks,t=i.label,h=i.labelGapWithTick,n=h,r=i.tickSize,k=r===void 0?0:r,c=i.tickMargin,v=c===void 0?0:c,a=0;if(e){Array.from(e).forEach(l=>{if(l){var g=l.getBoundingClientRect();g.height>a&&(a=g.height)}});var o=t?t.getBoundingClientRect().height:0,u=k+v,d=a+u+o+(t?n:0);return Math.round(d)}return 0};export{f as getCalculatedXAxisHeight};

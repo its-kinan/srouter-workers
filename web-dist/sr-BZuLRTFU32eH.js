@@ -1,0 +1,1 @@
+function e(n){return n.enabled===!1?0:n.status.connectedCount??(n.status.state==="connected"?1:0)}function t(n){return n.enabled!==!1}function u(n){return e(n)>0}export{e as getConnectedCount,u as isProviderConnected,t as isProviderEnabled};

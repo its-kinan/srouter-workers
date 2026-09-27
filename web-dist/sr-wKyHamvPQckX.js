@@ -1,0 +1,1 @@
+import{createDomVisualElement as o}from"./sr-C86bdBrj9l2D.js";import{createMotionProxy as r}from"./sr-BXq4ZENOhCob.js";import{featureBundle as t}from"./sr-_Lt1ueam7oCG.js";const n=r(t,o);export{n as motion};

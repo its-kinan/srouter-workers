@@ -1,0 +1,1 @@
+function n(e){return[e("x"),e("y")]}export{n as eachAxis};

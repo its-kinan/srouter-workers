@@ -1,0 +1,1 @@
+const t="data-base-ui-focusable",o="input:not([type='hidden']):not([disabled]),[contenteditable]:not([contenteditable='false']),textarea:not([disabled])",e="ArrowLeft",n="ArrowRight",R="ArrowUp",a="ArrowDown";export{a as ARROW_DOWN,e as ARROW_LEFT,n as ARROW_RIGHT,R as ARROW_UP,t as FOCUSABLE_ATTRIBUTE,o as TYPEABLE_SELECTOR};

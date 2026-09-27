@@ -1,0 +1,1 @@
+import{createSelector as r}from"./sr-B5wKPfy43Tya.js";import{selectChartOffsetInternal as e}from"./sr-DOrBGAyFKMim.js";var p=r([e],t=>({top:t.top,bottom:t.bottom,left:t.left,right:t.right}));export{p as selectChartOffset};

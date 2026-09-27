@@ -1,0 +1,1 @@
+import{isAnimationControls as o}from"./sr-CJIqLcNv7KEO.js";import{isVariantLabel as r}from"./sr-CahS11DatQl3.js";import{variantProps as t}from"./sr-8jmC_GSvRZTT.js";function a(i){return o(i.animate)||t.some(n=>r(i[n]))}function f(i){return!!(a(i)||i.variants)}export{a as isControllingVariants,f as isVariantNode};

@@ -1,0 +1,1 @@
+import{isSymbol as o}from"./sr-DvWpiT-f0e9L.js";const e=/\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,n=/^\w*$/;function i(r,t){return Array.isArray(r)?!1:typeof r=="number"||typeof r=="boolean"||r==null||o(r)?!0:typeof r=="string"&&(n.test(r)||!e.test(r))||t!=null}export{i as isKey};

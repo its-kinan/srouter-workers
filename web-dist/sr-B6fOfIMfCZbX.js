@@ -1,0 +1,1 @@
+import{createSelector as n}from"./sr-B5wKPfy43Tya.js";import{selectTooltipState as a}from"./sr-bPYBd2k9NHsO.js";var u=n([a],t=>t.tooltipItemPayloads),s=n([u,(t,e)=>e,(t,e,o)=>o],(t,e,o)=>{if(e!=null){var i=t.find(l=>l.settings.graphicalItemId===o);if(i!=null){var r=i.getPosition;if(r!=null)return r(e)}}});export{s as selectTooltipCoordinate};
