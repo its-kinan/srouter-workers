@@ -177,6 +177,22 @@ describe("dashboard API contracts (real SRouter UI)", () => {
         assert.ok(ids.includes("antigravity"), "catalog has antigravity");
         assert.ok(ids.includes("qoder"), "catalog has qoder");
         assert.ok(ids.includes("openai_codex"), "catalog has openai_codex");
+        // Regression: grok-cli/gemini-cli must be oauth (not synthetic custom/API-key),
+        // cline supports both API key and OAuth, bai requires an API key (original parity).
+        const byId = new Map();
+        for (const cat of Object.values(cats)) {
+            for (const p of cat)
+                byId.set(p.id ?? p.provider_id, p);
+        }
+        const grok = byId.get("grok-cli");
+        assert.equal(grok?.category, "oauth", "grok-cli is oauth");
+        assert.equal(grok?.requires_api_key, false, "grok-cli needs no API key");
+        const gemini = byId.get("gemini-cli");
+        assert.equal(gemini?.category, "oauth", "gemini-cli is oauth");
+        assert.equal(gemini?.requires_api_key, false, "gemini-cli needs no API key");
+        assert.equal(byId.get("cline")?.requires_api_key, true, "cline supports API key");
+        assert.equal(byId.get("cline")?.requires_oauth, true, "cline supports OAuth");
+        assert.equal(byId.get("bai")?.requires_api_key, true, "bai requires API key");
     });
     it("POST /v1/keys creates a key and shows the secret only once", async () => {
         const login = await req("/v1/admin/login", {
