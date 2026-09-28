@@ -73,11 +73,13 @@ const KNOWN_PROVIDERS: CatalogEntry[] = [
     { id: "codebuddy", name: "CodeBuddy", category: "oauth", protocol: "openai", alias: "codebuddy", base_url: "https://www.codebuddy.ai/v2/chat/completions", requires_api_key: false, requires_oauth: true, supports_custom_url: true, status_message: "CodeBuddy OAuth token missing" },
     { id: "codebuddy-cn", name: "CodeBuddy CN", category: "oauth", protocol: "openai", alias: "codebuddy-cn", base_url: "https://copilot.tencent.com/v2/chat/completions", requires_api_key: false, requires_oauth: true, supports_custom_url: true, status_message: "CodeBuddy CN OAuth token missing" },
     { id: "opencode_zen", name: "OpenCode Zen", category: "free_tier", protocol: "openai", alias: "zen", base_url: "https://opencode.ai/zen/v1", requires_api_key: false, status_message: "OpenCode Zen is ready" },
-    { id: "bai", name: "B.AI", category: "free_tier", protocol: "openai", alias: "bai", base_url: "https://api.b.ai/v1", requires_api_key: false, supports_custom_url: true, status_message: "B.AI API key missing" },
+    { id: "bai", name: "B.AI", category: "free_tier", protocol: "openai", alias: "bai", base_url: "https://api.b.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "B.AI API key missing" },
     { id: "experientiallabs", name: "Experiential Labs", category: "api_key", protocol: "openai", alias: "explabs", base_url: "https://api.experientiallabs.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "Experiential Labs API key missing" },
     { id: "minimax", name: "MiniMax", category: "api_key", protocol: "openai", alias: "minimax", base_url: "https://api.minimax.io/v1", requires_api_key: true, supports_custom_url: true, status_message: "MiniMax API key missing" },
-    { id: "cline", name: "Cline", category: "oauth", protocol: "openai", alias: "cline", base_url: "https://api.cline.bot/api/v1", requires_api_key: false, requires_oauth: true, supports_custom_url: true, status_message: "Cline OAuth account missing" },
-    { id: "atria", name: "Atria", category: "api_key", protocol: "openai", alias: "atria", base_url: "https://api.atria-asi.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "Atria API key missing" }
+    { id: "cline", name: "Cline", category: "oauth", protocol: "openai", alias: "cline", base_url: "https://api.cline.bot/api/v1", requires_api_key: true, requires_oauth: true, supports_custom_url: true, status_message: "Cline OAuth account missing" },
+    { id: "atria", name: "Atria", category: "api_key", protocol: "openai", alias: "atria", base_url: "https://api.atria-asi.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "Atria API key missing" },
+    { id: "grok-cli", name: "Grok CLI", category: "oauth", protocol: "openai", alias: "gcli", base_url: "https://cli-chat-proxy.grok.com/v1", requires_api_key: false, requires_oauth: true, status_message: "Grok CLI OAuth token missing" },
+    { id: "gemini-cli", name: "Gemini CLI", category: "oauth", protocol: "gemini", alias: "gemini-cli", base_url: "https://cloudcode-pa.googleapis.com/v1internal", requires_api_key: false, requires_oauth: true, status_message: "Gemini CLI OAuth token missing" }
 ];
 
 const KNOWN_IDS = new Set(KNOWN_PROVIDERS.map((p) => p.id));

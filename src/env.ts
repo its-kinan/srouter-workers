@@ -14,6 +14,16 @@ export interface Env {
     MASTER_KEY: string;
     /** Google OAuth client secret for Antigravity token refresh. Optional Worker secret. */
     ANTIGRAVITY_OAUTH_CLIENT_SECRET?: string;
+    /** Bring-your-own OAuth client overrides. When set, these take precedence over the
+        hardcoded SRouter client IDs and the origin-derived callback URI, so the user can
+        register their own OAuth app (e.g. in Google Cloud Console) with the Worker callback
+        URL `https://<worker>/v1/auth/<provider>/callback`. All optional Worker secrets/vars. */
+    ANTIGRAVITY_OAUTH_CLIENT_ID?: string;
+    ANTIGRAVITY_OAUTH_REDIRECT_URI?: string;
+    CLAUDE_OAUTH_CLIENT_ID?: string;
+    CLAUDE_OAUTH_REDIRECT_URI?: string;
+    CODEX_OAUTH_CLIENT_ID?: string;
+    CODEX_OAUTH_REDIRECT_URI?: string;
     /** Comma-separated list of allowed CORS origins (loopback always allowed). */
     SROUTER_CORS_ORIGINS?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */

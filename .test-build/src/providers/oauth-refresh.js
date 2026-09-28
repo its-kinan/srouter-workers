@@ -8,13 +8,13 @@ const ANTIGRAVITY_OAUTH_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g40
 const ANTIGRAVITY_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
-async function refreshGoogle(refreshToken, clientSecret) {
+async function refreshGoogle(refreshToken, clientId, clientSecret) {
     const res = await fetch(ANTIGRAVITY_OAUTH_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
             grant_type: "refresh_token",
-            client_id: ANTIGRAVITY_OAUTH_CLIENT_ID,
+            client_id: clientId,
             client_secret: clientSecret,
             refresh_token: refreshToken
         })
@@ -29,13 +29,13 @@ async function refreshGoogle(refreshToken, clientSecret) {
         expiresIn: data.expires_in
     };
 }
-async function refreshCodex(refreshToken) {
+async function refreshCodex(refreshToken, clientId) {
     const res = await fetch(CODEX_OAUTH_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
             grant_type: "refresh_token",
-            client_id: CODEX_OAUTH_CLIENT_ID,
+            client_id: clientId,
             refresh_token: refreshToken
         })
     });
@@ -64,10 +64,12 @@ export async function refreshOAuthTokens(providerType, refreshToken, secrets) {
                 console.warn("Skipping Antigravity token refresh: ANTIGRAVITY_OAUTH_CLIENT_SECRET not set");
                 return null;
             }
-            return refreshGoogle(refreshToken, secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET);
+            // Use the bring-your-own client ID when configured, so refresh matches
+            // the client the authorize step used.
+            return refreshGoogle(refreshToken, secrets.ANTIGRAVITY_OAUTH_CLIENT_ID || ANTIGRAVITY_OAUTH_CLIENT_ID, secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET);
         }
         case "openai_codex":
-            return refreshCodex(refreshToken);
+            return refreshCodex(refreshToken, secrets.CODEX_OAUTH_CLIENT_ID || CODEX_OAUTH_CLIENT_ID);
         case "grok-cli": {
             const refreshed = await new GrokCliOAuth().refreshTokens(refreshToken);
             return {

@@ -48,7 +48,8 @@ const TOKEN_IMPORT_PROVIDERS = new Set([
     "genspark",
     "bai",
     "experientiallabs",
-    "grok-cli"
+    "grok",
+    "gemini"
 ]);
 /** Providers whose token is stored as an api_key rather than an access_token. */
 const API_KEY_GROUP = new Set([
@@ -81,12 +82,18 @@ function authProviderIdOf(providerId) {
 function protocolFor(provider) {
     if (provider === "claude" || provider === "anthropic")
         return "anthropic";
+    if (provider === "gemini")
+        return "gemini";
     return "openai";
 }
 function providerIdFor(authProvider) {
     // Auth route id -> providers.provider_id. "openai" auth = openai_codex accounts.
     if (authProvider === "openai")
         return "openai_codex";
+    if (authProvider === "grok")
+        return "grok-cli";
+    if (authProvider === "gemini")
+        return "gemini-cli";
     return authProvider;
 }
 function displayName(provider) {
@@ -102,7 +109,9 @@ function displayName(provider) {
         anthropic: "Anthropic",
         atria: "Atria",
         tokenrouter: "TokenRouter",
-        "grok-cli": "Grok CLI"
+        "grok-cli": "Grok CLI",
+        grok: "Grok CLI",
+        gemini: "Gemini CLI"
     };
     return names[provider] ?? provider;
 }
@@ -115,7 +124,9 @@ function successMessage(provider) {
         cline: "Login Cline Berhasil!",
         codebuddy: "Login CodeBuddy Berhasil!",
         "codebuddy-cn": "Login CodeBuddy CN Berhasil!",
-        "grok-cli": "Login Grok CLI Berhasil!"
+        "grok-cli": "Login Grok CLI Berhasil!",
+        grok: "Login Grok CLI Berhasil!",
+        gemini: "Login Gemini CLI Berhasil!"
     };
     return messages[provider] ?? `Login ${displayName(provider)} Berhasil!`;
 }
@@ -295,10 +306,40 @@ function baseUrlFor(provider) {
         return "https://api.atria-asi.ai/v1";
     return undefined;
 }
-/** Derive the callback redirect URI from the incoming request origin. */
+/** Bring-your-own OAuth client ID override (Worker secret/var), per PKCE provider. */
+function oauthClientIdEnv(env, provider) {
+    switch (provider) {
+        case "antigravity":
+            return env.ANTIGRAVITY_OAUTH_CLIENT_ID || undefined;
+        case "claude":
+            return env.CLAUDE_OAUTH_CLIENT_ID || undefined;
+        case "openai":
+            return env.CODEX_OAUTH_CLIENT_ID || undefined;
+        default:
+            return undefined;
+    }
+}
+/** Bring-your-own OAuth redirect URI override (Worker secret/var), per PKCE provider. */
+function oauthRedirectUriEnv(env, provider) {
+    switch (provider) {
+        case "antigravity":
+            return env.ANTIGRAVITY_OAUTH_REDIRECT_URI || undefined;
+        case "claude":
+            return env.CLAUDE_OAUTH_REDIRECT_URI || undefined;
+        case "openai":
+            return env.CODEX_OAUTH_REDIRECT_URI || undefined;
+        default:
+            return undefined;
+    }
+}
+/**
+ * Derive the callback redirect URI. Precedence: explicit Worker secret/var
+ * override (bring-your-own OAuth client) > origin-derived default.
+ * The login route additionally allows a ?redirect_uri= query override on top.
+ */
 function redirectUriFor(c, provider) {
-    const origin = new URL(c.req.url).origin;
-    return `${origin}/v1/auth/${provider}/callback`;
+    return (oauthRedirectUriEnv(c.env, provider) ??
+        `${new URL(c.req.url).origin}/v1/auth/${provider}/callback`);
 }
 // ---------------------------------------------------------------------------
 // PKCE routes: GET /:provider/login, GET|POST /:provider/callback
@@ -308,7 +349,9 @@ for (const p of ["openai", "antigravity", "claude", "qoder"]) {
         const provider = p;
         try {
             await cleanupExpiredOAuthSessions(c.env.DB);
-            const clientId = c.req.query("client_id") || undefined;
+            // Precedence for client_id: ?client_id= query > Worker secret/var
+            // (bring-your-own OAuth client) > hardcoded SRouter default.
+            const clientId = c.req.query("client_id") || oauthClientIdEnv(c.env, provider) || undefined;
             const prompt = c.req.query("prompt") || undefined;
             // Allow an explicit redirect_uri override (dashboard may pass one);
             // otherwise derive from the Worker origin.
@@ -369,7 +412,12 @@ for (const p of ["openai", "antigravity", "claude", "qoder"]) {
         }
         // Session is single-use; remove it now (restored on exchange failure).
         await deleteOAuthSession(c.env.DB, state);
-        const client = pkceClientFor(provider, c.env, session.redirect_uri || redirectUriFor(c, provider));
+        // The exchange must use the same client_id/redirect_uri the authorize step
+        // used (stored in the session); fall back to env/BYO overrides for sessions
+        // created before this fix.
+        const client = pkceClientFor(provider, c.env, session.redirect_uri || redirectUriFor(c, provider), {
+            clientId: session.client_id || oauthClientIdEnv(c.env, provider) || undefined
+        });
         if (!client) {
             return apiError(c, 400, `Unknown OAuth provider: ${provider}`, "unknown_provider");
         }
@@ -692,17 +740,20 @@ oauthRoutes.post("/:provider/token", requireAdmin, async (c) => {
     const category = asApiKey ? "api_key" : "oauth";
     const protocol = protocolFor(provider);
     const providerName = name || `${displayName(provider)} (token import)`;
+    // Store under the catalog provider_id (e.g. "openai" auth -> "openai_codex"
+    // rows, "grok" -> "grok-cli") so the dashboard groups them correctly.
+    const catalogProviderId = providerIdFor(provider);
     await env.DB.prepare(`INSERT INTO providers
              (id, provider_id, name, category, protocol, base_url, secrets_enc, enabled, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`)
-        .bind(id, provider, providerName, category, protocol, baseUrl ?? null, secretsEnc, now)
+        .bind(id, catalogProviderId, providerName, category, protocol, baseUrl ?? null, secretsEnc, now)
         .run();
     return c.json({
         success: true,
         message: `${displayName(provider)} access token imported and stored encrypted.`,
         provider: {
             id,
-            providerId: provider,
+            providerId: catalogProviderId,
             name: providerName,
             category,
             protocol,

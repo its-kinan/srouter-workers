@@ -13,6 +13,8 @@ export interface RefreshedTokens {
 
 interface EnvSecrets {
     ANTIGRAVITY_OAUTH_CLIENT_SECRET?: string;
+    ANTIGRAVITY_OAUTH_CLIENT_ID?: string;
+    CODEX_OAUTH_CLIENT_ID?: string;
 }
 
 const ANTIGRAVITY_OAUTH_CLIENT_ID =
@@ -24,6 +26,7 @@ const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
 
 async function refreshGoogle(
     refreshToken: string,
+    clientId: string,
     clientSecret: string
 ): Promise<RefreshedTokens> {
     const res = await fetch(ANTIGRAVITY_OAUTH_TOKEN_URL, {
@@ -31,7 +34,7 @@ async function refreshGoogle(
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
             grant_type: "refresh_token",
-            client_id: ANTIGRAVITY_OAUTH_CLIENT_ID,
+            client_id: clientId,
             client_secret: clientSecret,
             refresh_token: refreshToken
         })
@@ -53,13 +56,13 @@ async function refreshGoogle(
     };
 }
 
-async function refreshCodex(refreshToken: string): Promise<RefreshedTokens> {
+async function refreshCodex(refreshToken: string, clientId: string): Promise<RefreshedTokens> {
     const res = await fetch(CODEX_OAUTH_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
             grant_type: "refresh_token",
-            client_id: CODEX_OAUTH_CLIENT_ID,
+            client_id: clientId,
             refresh_token: refreshToken
         })
     });
@@ -101,10 +104,16 @@ export async function refreshOAuthTokens(
                 );
                 return null;
             }
-            return refreshGoogle(refreshToken, secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET);
+            // Use the bring-your-own client ID when configured, so refresh matches
+            // the client the authorize step used.
+            return refreshGoogle(
+                refreshToken,
+                secrets.ANTIGRAVITY_OAUTH_CLIENT_ID || ANTIGRAVITY_OAUTH_CLIENT_ID,
+                secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET
+            );
         }
         case "openai_codex":
-            return refreshCodex(refreshToken);
+            return refreshCodex(refreshToken, secrets.CODEX_OAUTH_CLIENT_ID || CODEX_OAUTH_CLIENT_ID);
         case "grok-cli": {
             const refreshed = await new GrokCliOAuth().refreshTokens(refreshToken);
             return {
@@ -142,6 +151,8 @@ export interface EnsureFreshTokenDeps {
     ROUTER_STATE: DurableObjectNamespace;
     MASTER_KEY: string;
     ANTIGRAVITY_OAUTH_CLIENT_SECRET?: string;
+    ANTIGRAVITY_OAUTH_CLIENT_ID?: string;
+    CODEX_OAUTH_CLIENT_ID?: string;
 }
 
 /**

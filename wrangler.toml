@@ -46,3 +46,12 @@ not_found_handling = "single-page-application"
 # --- Worker secrets (set via `wrangler secret put`, NEVER committed) ---
 # MASTER_KEY                          32-byte base64 key for AES-GCM credential encryption
 # ANTIGRAVITY_OAUTH_CLIENT_SECRET     Google OAuth client secret for Antigravity token refresh
+# Bring-your-own OAuth client (optional; fixes redirect_uri_mismatch when the
+# hardcoded SRouter OAuth clients don't have the Worker callback URL registered):
+#   ANTIGRAVITY_OAUTH_CLIENT_ID / _REDIRECT_URI
+#   CLAUDE_OAUTH_CLIENT_ID / _REDIRECT_URI
+#   CODEX_OAUTH_CLIENT_ID / _REDIRECT_URI   (OpenAI/Codex login)
+# Register your own OAuth app, add https://<worker>/v1/auth/<provider>/callback
+# as an authorized redirect URI, then set the client ID (+ redirect URI if it
+# differs from the default). Query params ?client_id= / ?redirect_uri= on the
+# /v1/auth/<provider>/login endpoint take precedence over these.
