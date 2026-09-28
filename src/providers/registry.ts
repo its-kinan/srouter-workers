@@ -272,38 +272,74 @@ export function buildAdapter(
 }
 
 /**
+ * Account pinning: model ids may carry a "#selector" suffix to restrict
+ * routing to a single account, e.g. "antigravity/gemini-flash#acc_abc123".
+ * The pin is parsed from the LAST "#" (a model name could theoretically
+ * contain one). An empty pin ("model#") is treated as no pin.
+ */
+export function parseAccountPin(model: string): { model: string; pin: string | null } {
+    const hash = model.lastIndexOf("#");
+    if (hash < 0) return { model, pin: null };
+    const pin = model.slice(hash + 1).trim();
+    if (!pin) return { model: model.slice(0, hash), pin: null };
+    return { model: model.slice(0, hash), pin };
+}
+
+/**
+ * Whether an account is selected by a pin. Account ids match exactly;
+ * name and alias match case-insensitively (names are not unique, so all
+ * name matches are kept by the caller).
+ */
+export function accountMatchesPin(account: DecryptedAccount, pin: string): boolean {
+    if (account.id === pin) return true;
+    const needle = pin.toLowerCase();
+    if (account.name && account.name.toLowerCase() === needle) return true;
+    if (account.alias && account.alias.toLowerCase() === needle) return true;
+    return false;
+}
+
+/**
  * Find candidate accounts for a model id.
  * Matches "<prefix>/<rest>" against each account's routing prefixes
  * (provider type + alias), mirroring SRouter's prefix routing. Bare model ids
  * (no prefix) match accounts whose listModels() advertises them — resolved by
  * the caller via the DO-cached model list.
+ *
+ * When `pin` is set, only accounts selected by the pin are returned.
  */
 export function candidateAccountsForPrefix(
     model: string,
-    accounts: DecryptedAccount[]
+    accounts: DecryptedAccount[],
+    pin?: string | null
 ): DecryptedAccount[] {
     const slash = model.indexOf("/");
     if (slash < 0) return [];
     const prefix = model.slice(0, slash).toLowerCase();
-    return accounts.filter((a) =>
-        routingPrefixes(a.providerType, providerAlias(a.providerType, a.alias)).some(
-            (p) => p.toLowerCase() === prefix
-        )
+    return accounts.filter(
+        (a) =>
+            routingPrefixes(a.providerType, providerAlias(a.providerType, a.alias)).some(
+                (p) => p.toLowerCase() === prefix
+            ) && (!pin || accountMatchesPin(a, pin))
     );
 }
 
-/** Strip the "<prefix>/" routing prefix before handing the model to upstream. */
+/**
+ * Strip the "<prefix>/" routing prefix before handing the model to upstream.
+ * The account-pin "#selector" suffix is stripped as well — it must never
+ * leak upstream.
+ */
 export function stripRoutingPrefix(model: string, account: DecryptedAccount): string {
+    const cleanModel = parseAccountPin(model).model;
     const prefixes = routingPrefixes(
         account.providerType,
         providerAlias(account.providerType, account.alias)
     );
     for (const p of prefixes) {
-        if (model.toLowerCase().startsWith(p.toLowerCase() + "/")) {
-            return model.slice(p.length + 1);
+        if (cleanModel.toLowerCase().startsWith(p.toLowerCase() + "/")) {
+            return cleanModel.slice(p.length + 1);
         }
     }
-    return model;
+    return cleanModel;
 }
 
 /**
