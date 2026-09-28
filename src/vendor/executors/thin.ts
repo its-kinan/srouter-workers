@@ -172,3 +172,111 @@ export class NeosantaraExecutor extends OpenAIExecutor {
         });
     }
 }
+
+// ---------------------------------------------------------------------------
+// TokenHarbor
+// ---------------------------------------------------------------------------
+
+export interface TokenHarborExecutorOptions extends OpenAIExecutorOptions {}
+
+export class TokenHarborExecutor extends OpenAIExecutor {
+    constructor(options: TokenHarborExecutorOptions = {}) {
+        super({
+            id: options.id ?? "tokenharbor",
+            name: options.name ?? "TokenHarbor",
+            baseUrl: options.baseUrl ?? "https://tokenharbor.ai/v1",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TabiToken
+// ---------------------------------------------------------------------------
+
+export interface TabiTokenExecutorOptions extends OpenAIExecutorOptions {}
+
+export class TabiTokenExecutor extends OpenAIExecutor {
+    constructor(options: TabiTokenExecutorOptions = {}) {
+        super({
+            id: options.id ?? "tabitoken",
+            name: options.name ?? "TabiToken",
+            baseUrl: options.baseUrl ?? "https://tabitoken.com/v1",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GoRouter
+// ---------------------------------------------------------------------------
+
+export interface GoRouterExecutorOptions extends OpenAIExecutorOptions {}
+
+export class GoRouterExecutor extends OpenAIExecutor {
+    constructor(options: GoRouterExecutorOptions = {}) {
+        super({
+            id: options.id ?? "gorouter",
+            name: options.name ?? "GoRouter",
+            baseUrl: options.baseUrl ?? "https://gorouter.app/v1/",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OrcaRouter
+// ---------------------------------------------------------------------------
+
+export interface OrcaRouterExecutorOptions extends OpenAIExecutorOptions {}
+
+export class OrcaRouterExecutor extends OpenAIExecutor {
+    constructor(options: OrcaRouterExecutorOptions = {}) {
+        super({
+            id: options.id ?? "orcarouter",
+            name: options.name ?? "OrcaRouter",
+            baseUrl: options.baseUrl ?? "https://api.orcarouter.ai/v1",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GMICloud
+// ---------------------------------------------------------------------------
+
+export interface GMICloudExecutorOptions extends OpenAIExecutorOptions {}
+
+export class GMICloudExecutor extends OpenAIExecutor {
+    constructor(options: GMICloudExecutorOptions = {}) {
+        super({
+            id: options.id ?? "gmicloud",
+            name: options.name ?? "GMICloud",
+            baseUrl: options.baseUrl ?? "https://api.gmi-serving.com/v1",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Genspark
+// ---------------------------------------------------------------------------
+
+export interface GensparkExecutorOptions extends OpenAIExecutorOptions {}
+
+export class GensparkExecutor extends OpenAIExecutor {
+    constructor(options: GensparkExecutorOptions = {}) {
+        super({
+            id: options.id ?? "genspark",
+            name: options.name ?? "Genspark",
+            baseUrl: options.baseUrl ?? "https://www.genspark.ai/api/llm_proxy/v1",
+            apiKey: options.apiKey,
+            accessToken: options.accessToken
+        });
+    }
+}

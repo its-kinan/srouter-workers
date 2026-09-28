@@ -17,9 +17,15 @@ import {
     AtriaExecutor,
     BAIExecutor,
     ExperientialLabsExecutor,
+    GensparkExecutor,
+    GMICloudExecutor,
+    GoRouterExecutor,
     MiniMaxExecutor,
     NeosantaraExecutor,
     OpenCodeZenExecutor,
+    OrcaRouterExecutor,
+    TabiTokenExecutor,
+    TokenHarborExecutor,
     TokenRouterExecutor
 } from "../vendor/executors/thin.js";
 import { AnthropicExecutor } from "../vendor/executors/anthropic.js";
@@ -76,6 +82,12 @@ export const SUPPORTED_PROVIDERS = [
     "bai",
     "opencode_zen",
     "tokenrouter",
+    "tokenharbor",
+    "tabitoken",
+    "gorouter",
+    "orcarouter",
+    "gmicloud",
+    "genspark",
     "experientiallabs",
     "minimax",
     "neosantara",
@@ -105,7 +117,14 @@ const PROVIDER_ALIASES: Record<string, string> = {
     "gemini-cli": "gemini-cli",
     experientiallabs: "explabs",
     minimax: "minimax",
-    neosantara: "neosantara"
+    neosantara: "neosantara",
+    tokenharbor: "th",
+    tokenrouter: "tre",
+    tabitoken: "tb",
+    gorouter: "gr",
+    orcarouter: "orca",
+    gmicloud: "gmi",
+    genspark: "gs"
 };
 
 export function providerAlias(providerType: string, rowAlias?: string | null): string {
@@ -156,6 +175,18 @@ function buildExecutor(
             return new OpenCodeZenExecutor(common);
         case "tokenrouter":
             return new TokenRouterExecutor(common);
+        case "tokenharbor":
+            return new TokenHarborExecutor(common);
+        case "tabitoken":
+            return new TabiTokenExecutor(common);
+        case "gorouter":
+            return new GoRouterExecutor(common);
+        case "orcarouter":
+            return new OrcaRouterExecutor(common);
+        case "gmicloud":
+            return new GMICloudExecutor(common);
+        case "genspark":
+            return new GensparkExecutor(common);
         case "experientiallabs":
             return new ExperientialLabsExecutor(common);
         case "minimax":

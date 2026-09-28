@@ -40,10 +40,31 @@ const TOKEN_IMPORT_PROVIDERS = new Set([
     "anthropic",
     "atria",
     "tokenrouter",
+    "tokenharbor",
+    "tabitoken",
+    "gorouter",
+    "orcarouter",
+    "gmicloud",
+    "genspark",
+    "bai",
+    "experientiallabs",
     "grok-cli"
 ]);
 /** Providers whose token is stored as an api_key rather than an access_token. */
-const API_KEY_GROUP = new Set(["commandcode", "anthropic", "atria", "tokenrouter"]);
+const API_KEY_GROUP = new Set([
+    "commandcode",
+    "anthropic",
+    "atria",
+    "tokenrouter",
+    "tokenharbor",
+    "tabitoken",
+    "gorouter",
+    "orcarouter",
+    "gmicloud",
+    "genspark",
+    "bai",
+    "experientiallabs"
+]);
 const PKCE_PROVIDERS = new Set(["openai", "antigravity", "claude", "qoder"]);
 const DEVICE_PROVIDERS = new Set(["cline", "codebuddy", "codebuddy-cn", "grok-cli"]);
 const PKCE_SESSION_MAX_AGE_MS = 15 * 60 * 1000;
@@ -252,6 +273,26 @@ function baseUrlFor(provider) {
         return "https://copilot.tencent.com/v2/chat/completions";
     if (provider === "grok-cli")
         return "https://cli-chat-proxy.grok.com/v1";
+    if (provider === "tokenrouter")
+        return "https://api.tokenrouter.com/v1";
+    if (provider === "tokenharbor")
+        return "https://tokenharbor.ai/v1";
+    if (provider === "tabitoken")
+        return "https://tabitoken.com/v1";
+    if (provider === "gorouter")
+        return "https://gorouter.app/v1/";
+    if (provider === "orcarouter")
+        return "https://api.orcarouter.ai/v1";
+    if (provider === "gmicloud")
+        return "https://api.gmi-serving.com/v1";
+    if (provider === "genspark")
+        return "https://www.genspark.ai/api/llm_proxy/v1";
+    if (provider === "bai")
+        return "https://api.b.ai/v1/";
+    if (provider === "experientiallabs")
+        return "https://api.experientiallabs.ai/v1";
+    if (provider === "atria")
+        return "https://api.atria-asi.ai/v1";
     return undefined;
 }
 /** Derive the callback redirect URI from the incoming request origin. */
@@ -646,7 +687,7 @@ oauthRoutes.post("/:provider/token", requireAdmin, async (c) => {
     }
     const env = c.env;
     const secretsEnc = await encryptSecretsObject(secrets, env.MASTER_KEY);
-    const id = `${provider}_${Date.now()}`;
+    const id = `${provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const now = Date.now();
     const category = asApiKey ? "api_key" : "oauth";
     const protocol = protocolFor(provider);

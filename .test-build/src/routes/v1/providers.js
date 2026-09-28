@@ -25,6 +25,12 @@ const KNOWN_PROVIDERS = [
     { id: "kiro", name: "Kiro", category: "api_key", protocol: "custom", requires_api_key: true, supports_custom_url: true, status_message: "Kiro credential missing" },
     { id: "neosantara", name: "Neosantara", category: "api_key", protocol: "openai", base_url: "https://api.neosantara.xyz/v1", requires_api_key: true, supports_custom_url: true, status_message: "Neosantara API key missing" },
     { id: "tokenrouter", name: "TokenRouter", category: "api_key", protocol: "openai", base_url: "https://api.tokenrouter.com/v1", requires_api_key: true, supports_custom_url: true, status_message: "TokenRouter API key missing" },
+    { id: "tokenharbor", name: "TokenHarbor", category: "api_key", protocol: "openai", alias: "th", base_url: "https://tokenharbor.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "TokenHarbor API key missing" },
+    { id: "tabitoken", name: "TabiToken", category: "api_key", protocol: "openai", alias: "tb", base_url: "https://tabitoken.com/v1", requires_api_key: true, supports_custom_url: true, status_message: "TabiToken API key missing" },
+    { id: "gorouter", name: "GoRouter", category: "api_key", protocol: "openai", alias: "gr", base_url: "https://gorouter.app/v1/", requires_api_key: true, supports_custom_url: true, status_message: "GoRouter API key missing" },
+    { id: "orcarouter", name: "OrcaRouter", category: "api_key", protocol: "openai", alias: "orca", base_url: "https://api.orcarouter.ai/v1", requires_api_key: true, supports_custom_url: true, status_message: "OrcaRouter API key missing" },
+    { id: "gmicloud", name: "GMICloud", category: "api_key", protocol: "openai", alias: "gmi", base_url: "https://api.gmi-serving.com/v1", requires_api_key: true, supports_custom_url: true, status_message: "GMICloud API key missing" },
+    { id: "genspark", name: "Genspark", category: "api_key", protocol: "openai", alias: "gs", base_url: "https://www.genspark.ai/api/llm_proxy/v1", requires_api_key: true, supports_custom_url: true, status_message: "Genspark API key missing" },
     { id: "openai_codex", name: "OpenAI Codex / ChatGPT", category: "oauth", protocol: "openai", alias: "openai", requires_api_key: false, requires_oauth: true, status_message: "OAuth token missing" },
     { id: "anthropic", name: "Anthropic Claude", category: "oauth", protocol: "anthropic", alias: "claude", requires_api_key: false, requires_oauth: true, status_message: "OAuth token missing" },
     { id: "antigravity", name: "Google Antigravity", category: "oauth", protocol: "openai", base_url: "https://daily-cloudcode-pa.googleapis.com", requires_api_key: false, requires_oauth: true, status_message: "Antigravity OAuth token missing" },
@@ -363,7 +369,7 @@ providersRoutes.post("/", requireAdmin, async (c) => {
     const providerId = (body.provider_id ?? baseIdFor(name.toLowerCase().replace(/[^a-z0-9_-]/g, "")) ?? "custom").toLowerCase() || "custom";
     let id = (body.id ?? "").trim().toLowerCase().replace(ID_SANITIZE_RE, "");
     if (!id)
-        id = `${providerId}-${Date.now()}`;
+        id = `${providerId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const existing = await env.DB.prepare("SELECT id FROM providers WHERE id = ?").bind(id).first();
     if (existing) {
         return apiError(c, 400, `Connection id "${id}" already exists`, "duplicate_id");

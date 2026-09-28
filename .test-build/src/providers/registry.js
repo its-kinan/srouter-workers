@@ -10,7 +10,7 @@ import { QoderExecutor } from "../vendor/executors/qoder.js";
 import { CodexExecutor } from "../vendor/executors/codex.js";
 import { CommandCodeExecutor } from "../vendor/executors/commandcode.js";
 import { OpenAIExecutor } from "../vendor/executors/openai.js";
-import { AtriaExecutor, BAIExecutor, ExperientialLabsExecutor, MiniMaxExecutor, NeosantaraExecutor, OpenCodeZenExecutor, TokenRouterExecutor } from "../vendor/executors/thin.js";
+import { AtriaExecutor, BAIExecutor, ExperientialLabsExecutor, GensparkExecutor, GMICloudExecutor, GoRouterExecutor, MiniMaxExecutor, NeosantaraExecutor, OpenCodeZenExecutor, OrcaRouterExecutor, TabiTokenExecutor, TokenHarborExecutor, TokenRouterExecutor } from "../vendor/executors/thin.js";
 import { AnthropicExecutor } from "../vendor/executors/anthropic.js";
 import { ClineExecutor } from "../vendor/executors/cline.js";
 import { KiroExecutor } from "../vendor/executors/kiro.js";
@@ -30,6 +30,12 @@ export const SUPPORTED_PROVIDERS = [
     "bai",
     "opencode_zen",
     "tokenrouter",
+    "tokenharbor",
+    "tabitoken",
+    "gorouter",
+    "orcarouter",
+    "gmicloud",
+    "genspark",
     "experientiallabs",
     "minimax",
     "neosantara",
@@ -55,7 +61,14 @@ const PROVIDER_ALIASES = {
     "gemini-cli": "gemini-cli",
     experientiallabs: "explabs",
     minimax: "minimax",
-    neosantara: "neosantara"
+    neosantara: "neosantara",
+    tokenharbor: "th",
+    tokenrouter: "tre",
+    tabitoken: "tb",
+    gorouter: "gr",
+    orcarouter: "orca",
+    gmicloud: "gmi",
+    genspark: "gs"
 };
 export function providerAlias(providerType, rowAlias) {
     return rowAlias || PROVIDER_ALIASES[providerType] || providerType;
@@ -97,6 +110,18 @@ function buildExecutor(account, operatorOverrides) {
             return new OpenCodeZenExecutor(common);
         case "tokenrouter":
             return new TokenRouterExecutor(common);
+        case "tokenharbor":
+            return new TokenHarborExecutor(common);
+        case "tabitoken":
+            return new TabiTokenExecutor(common);
+        case "gorouter":
+            return new GoRouterExecutor(common);
+        case "orcarouter":
+            return new OrcaRouterExecutor(common);
+        case "gmicloud":
+            return new GMICloudExecutor(common);
+        case "genspark":
+            return new GensparkExecutor(common);
         case "experientiallabs":
             return new ExperientialLabsExecutor(common);
         case "minimax":
