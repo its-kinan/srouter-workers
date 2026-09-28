@@ -19,7 +19,7 @@
 // protocol handler can render them in its own error format.
 import { ensureFreshToken } from "../providers/oauth-refresh.js";
 import { encryptSecretsObject } from "../crypto/secretbox.js";
-import { buildAdapter, candidateAccountsForPrefix, listAllModels, loadAccounts, providerAlias, stripRoutingPrefix } from "../providers/registry.js";
+import { accountMatchesPin, buildAdapter, candidateAccountsForPrefix, listAllModels, loadAccounts, parseAccountPin, providerAlias, stripRoutingPrefix } from "../providers/registry.js";
 import { accumulateChunks } from "../vendor/translator/index.js";
 import { calculateCostFromTokens, getPricingForModel } from "../vendor/pricing.js";
 import { estimateTokens } from "./tokens.js";
@@ -72,12 +72,24 @@ async function orderedCandidates(env, accounts) {
     }
 }
 async function resolveModel(env, model, accounts) {
-    const prefixed = candidateAccountsForPrefix(model, accounts);
+    // Account pinning: "provider/model#selector" restricts routing to the
+    // pinned account(s) only. stripRoutingPrefix removes the pin, so the
+    // "#selector" suffix never leaks upstream.
+    const { model: cleanModel, pin } = parseAccountPin(model);
+    const prefixed = candidateAccountsForPrefix(cleanModel, accounts, pin);
     if (prefixed.length > 0) {
         return {
             candidates: prefixed,
-            upstreamByAccount: new Map(prefixed.map((a) => [a.id, stripRoutingPrefix(model, a)]))
+            upstreamByAccount: new Map(prefixed.map((a) => [a.id, stripRoutingPrefix(cleanModel, a)]))
         };
+    }
+    if (pin) {
+        // The pin named no account. Distinguish "the prefix matched accounts
+        // but the pin filtered them all out" (hard miss -> unknown model)
+        // from "unknown prefix" (fall through to the catalog lookup below).
+        const prefixMatched = candidateAccountsForPrefix(cleanModel, accounts);
+        if (prefixMatched.length > 0)
+            return null;
     }
     // Bare model id: look it up in the aggregated catalog.
     let catalog = null;
@@ -102,7 +114,7 @@ async function resolveModel(env, model, accounts) {
         }))
             .catch(() => { });
     }
-    const wanted = model.toLowerCase();
+    const wanted = cleanModel.toLowerCase();
     const matched = new Set();
     for (const m of catalog ?? []) {
         if (m.id.toLowerCase() === wanted) {
@@ -118,6 +130,8 @@ async function resolveModel(env, model, accounts) {
     const candidates = [];
     const upstreamByAccount = new Map();
     for (const a of accounts) {
+        if (pin && !accountMatchesPin(a, pin))
+            continue;
         const alias = providerAlias(a.providerType, a.alias).toLowerCase();
         for (const id of matched) {
             if (id.toLowerCase().startsWith(alias + "/") && !upstreamByAccount.has(a.id)) {

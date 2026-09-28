@@ -486,7 +486,7 @@ providersRoutes.post("/", requireAdmin, async (c) => {
 
     const providerId = (body.provider_id ?? baseIdFor(name.toLowerCase().replace(/[^a-z0-9_-]/g, "")) ?? "custom").toLowerCase() || "custom";
     let id = (body.id ?? "").trim().toLowerCase().replace(ID_SANITIZE_RE, "");
-    if (!id) id = `${providerId}-${Date.now()}`;
+    if (!id) id = `${providerId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const existing = await env.DB.prepare("SELECT id FROM providers WHERE id = ?").bind(id).first();
     if (existing) {
         return apiError(c, 400, `Connection id "${id}" already exists`, "duplicate_id");

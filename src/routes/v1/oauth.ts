@@ -866,7 +866,7 @@ oauthRoutes.post("/:provider/token", requireAdmin, async (c) => {
     const env = c.env;
     const secretsEnc = await encryptSecretsObject(secrets, env.MASTER_KEY);
 
-    const id = `${provider}_${Date.now()}`;
+    const id = `${provider}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const now = Date.now();
     const category = asApiKey ? "api_key" : "oauth";
     const protocol = protocolFor(provider);

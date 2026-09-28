@@ -15,7 +15,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { apiKeyAuth } from "../../middleware/apiKeyAuth.js";
 import { rateLimit } from "../../middleware/rateLimit.js";
-import { buildAdapter, candidateAccountsForPrefix, loadAccounts, stripRoutingPrefix } from "../../providers/registry.js";
+import { accountMatchesPin, buildAdapter, candidateAccountsForPrefix, loadAccounts, parseAccountPin, stripRoutingPrefix } from "../../providers/registry.js";
 import { pricingForModel } from "../../lib/pricing-data.js";
 import { extractStatusCode, runCandidateAttempts } from "../../routing/fallback.js";
 import { apiError } from "../../lib/api-error.js";
@@ -126,18 +126,25 @@ imagesRoutes.post("/generations", apiKeyAuth, rateLimit, async (c) => {
         })());
     };
     // Resolve accounts capable of image generation for a model id.
+    // Supports account pinning ("provider/model#selector"): the pin restricts
+    // candidates and never leaks upstream.
     const accountsForModel = (modelId) => {
-        const prefixed = candidateAccountsForPrefix(modelId, accounts);
+        const { model: cleanModel, pin } = parseAccountPin(modelId);
+        const prefixed = candidateAccountsForPrefix(cleanModel, accounts, pin);
         if (prefixed.length > 0) {
             return prefixed
-                .map((a) => ({ account: a, upstreamModel: stripRoutingPrefix(modelId, a) }))
+                .map((a) => ({ account: a, upstreamModel: stripRoutingPrefix(cleanModel, a) }))
                 .filter(({ account }) => buildAdapter(account).generateImage !== undefined);
         }
+        if (pin && candidateAccountsForPrefix(cleanModel, accounts).length > 0)
+            return [];
         // Bare model id: any account whose adapter supports generateImage.
         const out = [];
         for (const a of accounts) {
+            if (pin && !accountMatchesPin(a, pin))
+                continue;
             if (buildAdapter(a).generateImage !== undefined) {
-                out.push({ account: a, upstreamModel: modelId });
+                out.push({ account: a, upstreamModel: cleanModel });
             }
         }
         return out;

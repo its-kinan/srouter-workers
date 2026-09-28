@@ -60,18 +60,28 @@ export function shouldTriggerFallback(rule, err) {
     }
     return status === undefined;
 }
+import { parseAccountPin } from "../providers/registry.js";
 /**
  * Find enabled fallback rules matching a source model, mirroring the original's
  * findMatchingFallbackRulesDB: exact match (score 1), "prefix/*" wildcard
  * (score 2), "*" catch-all (score 3); sorted by priority then match score.
+ *
+ * The source model's account-pin suffix ("#selector") is ignored for rule
+ * matching, so a pinned request still triggers its combo; pinned *targets*
+ * (e.g. "antigravity/gemini-flash#acc_123") pass through untouched and are
+ * resolved by resolveModel.
  */
 export async function resolveCandidates(db, originalModel) {
     const rows = await db
         .prepare("SELECT * FROM fallback_rules WHERE enabled = 1")
         .all();
     const rules = (rows.results ?? []).map(toFallbackRule);
-    const normalizedSource = originalModel.toLowerCase().trim();
-    const prefix = originalModel.includes("/") ? originalModel.split("/")[0] : undefined;
+    // Ignore the account-pin suffix when matching rules: a pinned request
+    // ("antigravity/x#acc_1") should still trigger the same combos as the
+    // unpinned model. The candidate list keeps the original (pinned) model
+    // as the first candidate.
+    const normalizedSource = parseAccountPin(originalModel).model.toLowerCase().trim();
+    const prefix = normalizedSource.includes("/") ? normalizedSource.split("/")[0] : undefined;
     const normalizedPrefix = prefix?.toLowerCase().trim();
     const matches = [];
     for (const rule of rules) {
