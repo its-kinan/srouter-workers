@@ -133,13 +133,18 @@ app.notFound((c) => {
     if (c.req.path.startsWith("/v1/") || c.req.path.startsWith("/api/")) {
         return c.json({ error: { message: "Not found", type: "invalid_request_error" } }, 404);
     }
-    // The real SRouter React shell (apps/web/dist/index.html) is inlined into
+    // The Switch dashboard shell (web-dist/index.html) is inlined into
     // the bundle (see scripts/inline-dashboard.mjs); the JS/CSS chunks are
     // served as Workers Static Assets. Unmatched non-API paths are SPA routes,
-    // so serve the shell for client-side routing.
+    // so serve the shell for client-side routing. no-cache: the shell is tiny
+    // and references content-hashed chunks, so always revalidate it — a new
+    // deploy's chunk hashes are picked up on the next load.
     return new Response(DASHBOARD_HTML, {
         status: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8" }
+        headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-cache"
+        }
     });
 });
 

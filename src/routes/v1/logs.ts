@@ -216,6 +216,17 @@ logsRoutes.get("/", apiKeyAuth, async (c) => {
 logsRoutes.get("/stats", apiKeyAuth, async (c) => {
     const db = c.env.DB;
 
+    // Edge cache (caches.default), 30s TTL, keyed by URL. Stats are global
+    // aggregates — identical for every API key — and don't change
+    // meaningfully second-to-second. `caches` is undefined under node --test.
+    const storage = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+    const edge = storage?.default ?? null;
+    const cacheKey = edge ? new Request(c.req.url) : null;
+    if (edge && cacheKey) {
+        const hit = await edge.match(cacheKey);
+        if (hit) return hit;
+    }
+
     const totals = await db
         .prepare(
             `SELECT COUNT(*) AS total_requests,
@@ -273,7 +284,8 @@ logsRoutes.get("/stats", apiKeyAuth, async (c) => {
     });
 
     const totalEstimatedCost = totals?.estimated_cost ?? 0;
-    return c.json({
+    c.header("Cache-Control", "public, max-age=30");
+    const response = c.json({
         object: "usage",
         totalRequests: totals?.total_requests ?? 0,
         totalSuccessRequests: totals?.success_requests ?? 0,
@@ -290,6 +302,21 @@ logsRoutes.get("/stats", apiKeyAuth, async (c) => {
         estimated: true,
         byModel
     });
+    if (edge && cacheKey) {
+        // Populate the edge cache in the background; the stored response
+        // carries the Cache-Control above, bounding staleness at 30s.
+        const put = edge.put(cacheKey, response.clone()).catch(() => {});
+        let bgCtx: { waitUntil(p: Promise<unknown>): void } | undefined;
+        try {
+            const ec = c.executionCtx;
+            bgCtx = typeof ec?.waitUntil === "function" ? ec : undefined;
+        } catch {
+            bgCtx = undefined;
+        }
+        if (bgCtx) bgCtx.waitUntil(put);
+        else await put;
+    }
+    return response;
 });
 
 // ---------------------------------------------------------------------------

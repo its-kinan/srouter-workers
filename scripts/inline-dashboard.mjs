@@ -31,3 +31,24 @@ writeFileSync(
     `export const DASHBOARD_HTML: string = ${JSON.stringify(html)};\n`
 );
 console.log(`inlined web-dist/index.html (${html.length} chars) -> src/dashboard-html.ts`);
+
+// Ensure the _headers asset-cache rules exist in web-dist/ (consumed natively
+// by Workers Static Assets). Fingerprinted chunks -> immutable; the HTML
+// shell stays revalidated via the worker's no-cache header.
+const headersPath = join(distDir, "_headers");
+if (!existsSync(headersPath)) {
+    writeFileSync(
+        headersPath,
+        `# Workers Static Assets consumes this file natively (same format as Pages).\n` +
+        `# All sr-<hash>.js chunks are content-fingerprinted: the URL changes whenever\n` +
+        `# the content does, so they are safe to cache forever. This turns repeat\n` +
+        `# dashboard visits from ~326 conditional revalidations into zero requests.\n` +
+        `/*.js\n` +
+        `  Cache-Control: public, max-age=31536000, immutable\n` +
+        `/assets/*\n` +
+        `  Cache-Control: public, max-age=31536000, immutable\n` +
+        `/icons/*\n` +
+        `  Cache-Control: public, max-age=31536000, immutable\n`
+    );
+    console.log("wrote web-dist/_headers (immutable asset cache rules)");
+}
