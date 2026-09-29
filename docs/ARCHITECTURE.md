@@ -1,96 +1,98 @@
 # Architecture
 
-## Why Workers
-
-SRouter is a stateful Node gateway: an in-process provider registry holds
-round-robin cursors and circuit-breaker health, a `setInterval` sweeps OAuth
-tokens, and SQLite persists everything. On Cloudflare Workers that state has
-to live somewhere else:
-
-| SRouter (Node)                          | srouter-workers                              |
-|-----------------------------------------|----------------------------------------------|
-| In-memory `ProviderRegistry`            | `RouterState` Durable Object (one, global)   |
-| `setInterval` OAuth sweeper             | Cron trigger `* * * * *` → `scheduled()`     |
-| SQLite (`packages/db`, 12 tables)       | D1 (`src/db/migrations/0001_initial.sql`)    |
-| `scryptSync` admin passwords            | PBKDF2-SHA256 via WebCrypto                  |
-| Plaintext provider secrets in SQLite    | AES-GCM envelopes in D1 (`secrets_enc`)      |
-| Plaintext virtual API keys              | SHA-256 hashes only                          |
-| Cloudflare Tunnel settings page         | Dropped — Workers are publicly reachable     |
-| DB export/import (SQLite file copy)     | Deferred — design: SQL/JSON snapshots to R2  |
-| Dual-port OAuth callbacks (20128/20129) | Single Worker origin; device-code polling    |
-|                                         | state lives in D1/DO (Phase 2)               |
+Switch is a stateless-edge router: every request runs in a fresh Cloudflare
+isolate, so all shared state lives in D1 or Durable Objects, and everything
+an isolate can remember (decrypted accounts, catalog, key rows) is cached
+isolate-locally with short TTLs.
 
 ## Request flow
 
 `POST /v1/chat/completions`:
 
-1. `apiKeyAuth` middleware — admin session cookie bypasses key auth; otherwise
-   the virtual key is SHA-256-hashed and looked up in D1; enabled / credit /
-   quota / model-allow-list checks.
-2. Body validated with Zod; model resolved to candidate accounts:
-   - `"<prefix>/<model>"` → accounts whose provider type or alias matches the
-     prefix (e.g. `antigravity/`, `gcli/`, `qd/`); prefix stripped upstream.
-   - bare id → looked up in the DO-cached aggregated catalog (`<alias>/<id>`).
-3. The DO's `/route` returns candidates ordered by health (healthy first,
-   then shortest remaining cooldown) with round-robin rotation per provider
-   base.
-4. Each candidate's executor streams; **failover happens only before the first
-   chunk**. The first chunk commits us to that provider (HTTP semantics: we
-   cannot switch upstreams mid-response).
-5. Success/failure is reported to the DO (`/report`), which maintains the
-   circuit breaker: exponential backoff (30s base, 5min max) on failures,
-   immediate heal on success. Rate-limit-looking errors go straight to
-   cooldown; 5 consecutive non-rate-limit failures mark an account exhausted.
-6. Usage is tallied from upstream `usage` fields (estimated when absent),
-   the request is logged to D1 and the key's token/cost counters bumped
-   atomically — all inside `ctx.waitUntil` so logging never delays the client.
+1. **Auth** — `apiKeyAuth` middleware hashes the bearer key (SHA-256) and
+   looks up `api_keys` in D1 (30s isolate-local cache). Enabled / credit /
+   quota / model-allow-list / rate-limit checks. Admin session cookie
+   bypasses key auth.
+2. **Preamble (parallel)** — account load (D1 + AES-GCM decrypt, 60s
+   isolate cache, selective by provider prefix) and model catalog fetch
+   (DO, 60s isolate cache) run via `Promise.all`. Fallback rules load
+   from D1 (60s isolate cache).
+3. **Model resolution** — `"<prefix>/<model>"` selects accounts whose
+   provider type or alias matches the prefix (e.g. `antigravity/`,
+   `qd/`, `th/`); the prefix is stripped before upstream dispatch. Bare
+   ids resolve via the aggregated catalog (`<alias>/<id>`). A `#suffix`
+   pins to one account (`provider/model#account-id` or `#name`); invalid
+   pins return 404 instead of failing over.
+4. **Ordering** — candidates are ordered isolate-locally: cooldown
+   filtering first, then per-account latency EMA (fastest first, unknown
+   accounts get discovery priority), then round-robin rotation. No
+   blocking DO call on the request path.
+5. **Execution** — each candidate's executor streams; **failover happens
+   only before the first chunk**. The first chunk commits the response to
+   that provider (HTTP semantics: no mid-response upstream switching).
+   Without a configured search backend, streaming passes through without
+   buffering.
+6. **Reporting (waitUntil)** — success/failure + time-to-first-chunk go to
+   the provider's DO shard, which maintains the circuit breaker:
+   exponential backoff (30s base, 5min max) on failures, immediate heal on
+   success. Rate-limit-looking errors go straight to cooldown; 5
+   consecutive non-rate-limit failures mark an account exhausted.
+7. **Usage + logs (waitUntil)** — token deltas are batched into the DO
+   shard and flushed to D1 `api_keys` every ~30s (persisted in DO storage,
+   so eviction can't drop them). Failed requests write one row to
+   `request_logs` (error-only by default); successes skip it.
 
-`GET /v1/models` serves the DO-cached aggregation (5-min TTL), refreshing
-from each account's `listModels()` on miss.
+`GET /v1/models` serves the aggregated catalog, edge-cached for 60s via
+`caches.default` (restricted keys with `allowed_models` bypass the cache
+so filtered lists never leak between keys). `GET /health` reports
+per-isolate cache stats.
 
-## Durable Object: RouterState
+## Where state lives
 
-Single instance (`getByName("router")`). Persists to `ctx.storage` on every
-mutation:
+| State | Where | Notes |
+|---|---|---|
+| Accounts, keys, logs, fallback rules, settings, admin | D1 (`srouter-db`) | Source of truth for config |
+| Circuit health, latency EMA, round-robin cursors, usage deltas, model catalog, refresh locks | Durable Objects (`RouterState`) | **Sharded per provider** (`router-<type>`); `router` keeps the global catalog + refresh locks |
+| Backups / snapshots | R2 (`srouter-data`) | |
+| Decrypted accounts, catalog, key rows, fallback rules | Isolate memory | 30–60s TTLs; version-checked against D1 |
 
-- `roundRobin: Record<providerBase, number>` — rotation cursors
-- `circuit: Record<accountId, CircuitEntry>` — health, consecutive failures,
-  cooldown deadlines, last error
-- `modelCache: { models, cachedAt } | null`
-- `refreshLocks: Record<accountId, heldUntil>` — cron dedup across isolates
+Sharding is deliberate: one DO per provider means circuit/usage writes for
+one provider never contend with another. Persistence is debounced (~1
+write/sec/shard under load).
 
-RPC is plain JSON-over-fetch (`/route`, `/report`, `/health`, `/models`,
-`/refresh/try`, `/reset`). The DO never sees secrets — the Worker passes only
-`{ id, base }` refs.
+## Why this shape
 
-Single-instance is a deliberate Phase 1 choice: one writer means no split
-brain for circuit state. If traffic outgrows one DO, shard by provider base.
+The original design did 342 AES-GCM decryptions, two blocking DO
+round-trips, and two D1 writes on every request — enough per-request CPU
+to trip Cloudflare's 1102 resource-limit errors under load. The current
+design pushes everything possible into the isolate (caches, routing
+decisions) and moves everything shared into sharded DOs written via
+`waitUntil`, so the request path is: auth → parallel preamble → local
+ordering → upstream stream.
 
-## Cron sweeper
+## Cron (`* * * * *`)
 
-Every minute, `scheduled()` selects enabled OAuth accounts whose tokens
-expire within 10 minutes (or have no recorded expiry), acquires a per-account
-lock from the DO (120s TTL), refreshes via `src/providers/oauth-refresh.ts`,
-re-encrypts the secrets envelope, and updates D1. Refresh support:
+`scheduled()` does three things:
 
-- `openai_codex` — live (public client id, no secret)
-- `antigravity` — live when `ANTIGRAVITY_OAUTH_CLIENT_SECRET` Worker secret is
-  set; skipped with a warning otherwise (never committed to the repo)
-- `qoder` — no-op (SRouter's own QoderOAuth.refreshTokens is a documented
-  no-op for device tokens)
-- `grok-cli` / `gemini-cli` — Phase 2, with their OAuth onboarding flows
+1. **OAuth sweeper** — selects enabled OAuth accounts expiring within 10
+   minutes, acquires a per-account lock from the DO (120s TTL), refreshes
+   via `src/providers/oauth-refresh.ts`, re-encrypts the secrets envelope.
+2. **Log pruning** — once a day (00:00 UTC tick), deletes `request_logs`
+   rows older than `SROUTER_LOG_RETENTION_DAYS` (default 30; ≤0 disables).
+3. **Catalog rebuild** — refreshes the aggregated model catalog so
+   request-time fan-out is never needed.
 
 ## Encryption
 
 `src/crypto/secretbox.ts`: AES-GCM-256, unique 12-byte nonce per value,
-envelope `{"v":1,"iv":"b64","ct":"b64"}` stored in `providers.secrets_enc`.
-Master key: 32-byte base64 in the `MASTER_KEY` Worker secret. Key rotation:
-re-encrypt envelopes and swap the secret (tooling Phase 2).
+envelope `{"v":1,"iv":"b64","ct":"b64"}` in `providers.secrets_enc`. Master
+key: 32-byte base64 `MASTER_KEY` Worker secret, imported once per isolate.
+Legacy plaintext columns exist only for import compatibility; new writes
+keep them NULL.
 
-## What was deliberately dropped
+## Deliberately dropped (vs the original SRouter)
 
-- **Cloudflare Tunnel page** — meaningless on Workers; the Worker URL *is*
-  the public endpoint.
+- **Cloudflare Tunnel settings page** — meaningless on Workers; the Worker
+  URL *is* the public endpoint.
 - **In-process scheduling** — replaced by cron triggers.
-- **Dual-port OAuth** — SRouter ran OAuth callbacks on a second port; here
-  everything is same-origin.
+- **Dual-port OAuth callbacks** — everything is same-origin.

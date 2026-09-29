@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRouter</title>
+<title>Switch</title>
 <style>
   :root {
     --canvas: #141414;
@@ -216,7 +216,7 @@
     <div class="auth-card" id="setup-card" hidden>
       <div class="auth-brand">
         <div class="brand-mark">S</div>
-        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+        <div><span class="brand-name">Switch</span></div>
       </div>
       <h2>First-run setup</h2>
       <p class="sub">No admin account exists yet. Create one to continue.</p>
@@ -228,7 +228,7 @@
     <div class="auth-card" id="login-card" hidden>
       <div class="auth-brand">
         <div class="brand-mark">S</div>
-        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+        <div><span class="brand-name">Switch</span></div>
       </div>
       <h2>Admin login</h2>
       <p class="sub">Sign in to manage your gateway.</p>
@@ -244,12 +244,12 @@
     <aside id="sidebar">
       <div class="auth-brand" style="padding: 4px 12px 8px;">
         <div class="brand-mark">S</div>
-        <div><span class="brand-name">SRouter</span> <span class="brand-tag">workers</span></div>
+        <div><span class="brand-name">Switch</span></div>
       </div>
       <div id="nav"></div>
       <div class="spacer"></div>
       <div class="sidebar-foot">
-        <div class="version-line">srouter-workers · phase 1</div>
+        <div class="version-line">Switch</div>
         <button class="nav-item" id="logout-btn"><span class="dot"></span>Log out</button>
       </div>
     </aside>
@@ -613,7 +613,7 @@ async function pageSettings(page) {
   page.innerHTML = pageHead("Settings", "Deployment information.") +
     `<div class="card">
       <h3>Deployment</h3>
-      <p class="card-sub">Cloudflare Workers port of SRouter.</p>
+      <p class="card-sub">Edge-native LLM router.</p>
       <dl class="kv">
         <dt>Worker</dt><dd class="mono">srouter-workers</dd>
         <dt>Endpoint</dt><dd class="mono">https://srouter-workers.ediprnm-keen.workers.dev</dd>

@@ -1,50 +1,62 @@
 # Deployment
 
-Phase 1 is built and committed but **not deployed**. These steps deploy it
-with Wrangler.
+Live: `https://srouter-workers.ediprnm-keen.workers.dev`
 
-## 1. Create the D1 database
-
-```bash
-wrangler d1 create srouter-db
-```
-
-Paste the returned `database_id` into `wrangler.toml` (replacing
-`REPLACE_WITH_D1_DATABASE_ID`). Then apply the schema:
+## Deploy
 
 ```bash
-npm run db:migrate   # wrangler d1 migrations apply srouter-db
+python3 scripts/deploy.py
 ```
 
-## 2. Create the R2 bucket
+The script builds the Worker, uploads it via the Cloudflare API, and
+**restores the `* * * * *` cron trigger** afterwards. Raw script uploads
+wipe cron schedules — never deploy with plain `wrangler deploy` unless
+you re-add the schedule after.
+
+**Never reapply the Durable Object migration** (`[[migrations]] tag =
+"v1"` in `wrangler.toml`). Re-running it against the live namespace can
+orphan existing DO state.
+
+After deploy, verify:
 
 ```bash
-wrangler r2 bucket create srouter-data
+# cron is back
+wrangler triggers list  # or check via the API
+curl https://<worker>/health
 ```
 
-(Phase 1 only needs the binding to exist; archive/snapshot features are Phase 2.)
-
-## 3. Set secrets (never commit these)
+## Secrets (never committed)
 
 ```bash
 # 32-byte base64 master key for AES-GCM credential encryption.
 # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 wrangler secret put MASTER_KEY
 
-# Optional: enables the cron sweeper to refresh Antigravity OAuth tokens.
+# Optional: Google OAuth client secret for Antigravity token refresh.
 wrangler secret put ANTIGRAVITY_OAUTH_CLIENT_SECRET
+
+# Optional: bring-your-own OAuth clients (when the built-in OAuth clients
+# don't have your Worker callback URL registered).
+wrangler secret put ANTIGRAVITY_OAUTH_CLIENT_ID
+wrangler secret put CLAUDE_OAUTH_CLIENT_ID
+wrangler secret put CODEX_OAUTH_CLIENT_ID
+# ... plus optional *_OAUTH_REDIRECT_URI companions
+
+# Optional: web-search backends for search interception.
+wrangler secret put BRAVE_API_KEY   # or TAVILY_API_KEY / SERPER_API_KEY / SEARXNG_URL
 ```
 
-## 4. Deploy
+Behavior vars (set in `wrangler.toml` `[vars]` or via the dashboard):
 
-```bash
-wrangler deploy
-```
+| Var | Effect |
+|---|---|
+| `SROUTER_CORS_ORIGINS` | Comma-separated allowed CORS origins (loopback always allowed) |
+| `SROUTER_DISABLE_REQUEST_LOGS=1` | No `request_logs` writes at all |
+| `SROUTER_LOG_ALL_REQUESTS=1` | Log every request, not just errors |
+| `SROUTER_LOG_RETENTION_DAYS` | Log pruning retention, default 30 (≤0 disables) |
+| `STEALTH_HEADER_OVERRIDES` | JSON header overrides per provider (never logged) |
 
-This also registers the `RouterState` Durable Object migration and the
-per-minute cron trigger.
-
-## 5. First-run admin setup
+## First-run admin setup
 
 ```bash
 curl https://<worker>/api/admin/status
@@ -59,27 +71,16 @@ curl -X POST https://<worker>/api/admin/setup \
   -d '{"password":"..."}' -c cookies.txt
 ```
 
-Note: SRouter used `scrypt` for admin passwords; this port uses
-PBKDF2-SHA256 (WebCrypto). Existing SRouter password hashes cannot be
-verified — the admin password must be (re)created via `/api/admin/setup`.
+Admin passwords are PBKDF2-SHA256 via WebCrypto (100k iterations).
 
-## 6. Add providers and virtual keys
+## OAuth callbacks
 
-Phase 1 admin data endpoints are read-only (`/api/admin/summary`). Writing
-accounts/keys is done via D1 until the dashboard lands:
+Register `https://<worker>/v1/auth/<provider>/callback` as an authorized
+redirect URI in your OAuth app, then set the client ID/secret secrets
+above. Query params `?client_id=` / `?redirect_uri=` on
+`/v1/auth/<provider>/login` take precedence over the secrets.
 
-```sql
--- providers row (secrets as AES-GCM envelope; encrypt with MASTER_KEY —
--- see docs/SECURITY.md for the envelope helper)
-INSERT INTO providers (id, provider_id, name, category, protocol, secrets_enc, enabled, created_at)
-VALUES ('antigravity_1', 'antigravity', 'Antigravity #1', 'oauth', 'gemini', '<envelope>', 1, unixepoch());
-
--- virtual API key (store only the SHA-256 hash; show the key once)
-INSERT INTO api_keys (id, key_hash, key_prefix, name, enabled, created_at)
-VALUES ('key_1', '<sha256 hex>', 'sk-...', 'main key', 1, unixepoch());
-```
-
-## 7. Use it
+## Use it
 
 ```bash
 curl https://<worker>/v1/models -H "Authorization: Bearer <virtual-key>"
@@ -88,10 +89,14 @@ curl https://<worker>/v1/chat/completions -H "Authorization: Bearer <virtual-key
   -d '{"model":"antigravity/gemini-3-pro","messages":[{"role":"user","content":"hi"}],"stream":true}'
 ```
 
-## Custom domain / routes
+## Gotchas
 
-Attach a route in `wrangler.toml` or the dashboard when ready:
-
-```toml
-# route = { pattern = "srouter.example.com/*", zone_name = "example.com" }
-```
+- Raw Worker uploads **erase cron schedules** — `scripts/deploy.py`
+  restores them; always verify after a manual upload.
+- Raw uploads can also drop bindings — the deploy script pins D1, R2,
+  and DO bindings explicitly.
+- Account/key changes take up to 60s to reach warm isolates (cache TTL).
+- The model catalog can briefly list a model removed upstream (stale
+  cache, bounded by TTL).
+- `wrangler.toml` sets `[limits] cpu_ms = 5000` — headroom for cold-start
+  decryption on the paid plan.

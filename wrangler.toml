@@ -1,6 +1,5 @@
-# srouter-workers — Cloudflare Workers port of SRouter.
-# Phase 1. Deploy with: wrangler d1 create srouter-db (then paste the id below),
-# wrangler secret put MASTER_KEY, then `wrangler deploy`.
+# Switch — edge-native LLM router on Cloudflare Workers.
+# Deploy with: python3 scripts/deploy.py (restores cron; never reapply the DO migration).
 
 name = "srouter-workers"
 main = "src/index.ts"
