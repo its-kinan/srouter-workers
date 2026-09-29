@@ -164,6 +164,12 @@ def main():
              "class_name": "LoginRateLimit"},
             {"type": "assets", "name": "ASSETS"},
             {"type": "plain_text", "name": "ENVIRONMENT", "text": "production"},
+        ]
+        + [
+            {"type": "plain_text", "name": name, "text": str(text)}
+            # DEPLOY_EXTRA_VARS='{"SROUTER_SUBREQUEST_BUDGET":"3"}' injects
+            # temporary plain_text bindings without editing this script.
+            for name, text in json.loads(os.environ.get("DEPLOY_EXTRA_VARS", "{}")).items()
         ],
         # DO migration: only when INCLUDE_DO_MIGRATION=1, and only the v2 tag
         # (LoginRateLimit). v1 (SwitchState) is already applied; re-sending an
