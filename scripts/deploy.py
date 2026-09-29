@@ -90,9 +90,22 @@ def main():
 
     # 3. assets manifest from web-dist/
     dist = os.path.join(ROOT, "web-dist")
+    # _headers / _redirects are NOT uploaded as ordinary assets: their
+    # contents go into the script metadata's assets.config (wrangler does the
+    # same). Uploading them as files would serve the raw rule files publicly
+    # and apply none of the rules.
+    asset_config = {"not_found_handling": "single-page-application"}
+    for special in ("_headers", "_redirects"):
+        special_path = os.path.join(dist, special)
+        if os.path.isfile(special_path):
+            with open(special_path, "r", encoding="utf-8") as fh:
+                asset_config[special] = fh.read()
+            print(f"assets config: {special} ({os.path.getsize(special_path)} bytes)")
     manifest, blobs = {}, {}
     for root, _, files in os.walk(dist):
         for f in sorted(files):
+            if f in ("_headers", "_redirects"):
+                continue
             p = os.path.join(root, f)
             rel = "/" + os.path.relpath(p, dist).replace(os.sep, "/")
             with open(p, "rb") as fh:
@@ -154,7 +167,7 @@ def main():
             "new_sqlite_classes": ["SwitchState"],
             "new_classes": [], "renamed_classes": [], "deleted_classes": [],
         }} if INCLUDE_DO_MIGRATION else {}),
-        "assets": {"jwt": completion_jwt},
+        "assets": {"jwt": completion_jwt, "config": asset_config},
     }
     body, ctype = multipart([
         ("metadata", None, "application/json", json.dumps(metadata).encode()),
