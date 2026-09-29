@@ -102,5 +102,8 @@ curl https://<worker>/v1/chat/completions -H "Authorization: Bearer <virtual-key
 - Account/key changes take up to 60s to reach warm isolates (cache TTL).
 - The model catalog can briefly list a model removed upstream (stale
   cache, bounded by TTL).
-- `wrangler.toml` sets `[limits] cpu_ms = 5000` — headroom for cold-start
-  decryption on the paid plan.
+- `wrangler.toml` deliberately sets no `[limits]`: deploy.py uses the raw
+  upload API (which never sent them), and custom CPU limits are rejected
+  on the Free plan regardless. Free-plan CPU is a hard ~10ms per request;
+  exceeding it returns Cloudflare 1102 ("Worker exceeded resource limits",
+  surfaced as 503). Workers Paid raises this to 30s default.

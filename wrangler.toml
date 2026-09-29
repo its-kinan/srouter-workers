@@ -47,10 +47,10 @@ new_sqlite_classes = ["LoginRateLimit"]
 [triggers]
 crons = ["* * * * *"]
 
-# Raise the CPU ceiling for the per-request routing work (cold-start decrypt
-# of 342 accounts briefly needs headroom; warm requests are unaffected).
-[limits]
-cpu_ms = 5000
+# NOTE: no [limits] section on purpose. deploy.py uploads via the raw API
+# and does not send wrangler [limits], and custom CPU limits are not
+# supported on the Free plan anyway (hard 10ms cap -> Cloudflare 1102
+# "Worker exceeded resource limits" when a request burns more CPU).
 
 # --- Static assets: minimal Phase 1 dashboard shell in public/ ---
 [assets]
