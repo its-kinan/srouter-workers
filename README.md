@@ -108,7 +108,7 @@ npm test            # 116 unit tests (crypto, routing, DO logic, caches)
 
 ## Deploy
 
-Live: `https://srouter-workers.ediprnm-keen.workers.dev`
+Live: `https://switch.ediprnm-keen.workers.dev`
 
 ```bash
 python3 scripts/deploy.py

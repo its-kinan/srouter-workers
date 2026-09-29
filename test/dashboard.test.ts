@@ -88,7 +88,7 @@ function makeEnv(): Env {
     return {
         DB: new D1Adapter(db) as unknown as D1Database,
         R2: {} as unknown as R2Bucket,
-        ROUTER_STATE: {
+        SWITCH_STATE: {
             getByName: () => routerStub
         } as unknown as DurableObjectNamespace,
         MASTER_KEY: Buffer.from("x".repeat(32)).toString("base64"),
@@ -369,7 +369,7 @@ describe("models aggregation hardening (/v1/models)", () => {
         modelsEnv = {
             DB: new D1Adapter(db) as unknown as D1Database,
             R2: {} as unknown as R2Bucket,
-            ROUTER_STATE: { getByName: () => routerStub } as unknown as DurableObjectNamespace,
+            SWITCH_STATE: { getByName: () => routerStub } as unknown as DurableObjectNamespace,
             MASTER_KEY: Buffer.from("m".repeat(32)).toString("base64"),
             ENVIRONMENT: "test"
         };

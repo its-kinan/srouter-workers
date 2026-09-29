@@ -1,6 +1,6 @@
 // Unit tests for srouter-workers Phase 1 (run: npm test).
 // Covers: AES-GCM secret envelopes, PBKDF2 admin passwords, model-prefix
-// routing, token estimation, and the RouterState Durable Object logic
+// routing, token estimation, and the SwitchState Durable Object logic
 // (round-robin ordering + circuit breaker) with an in-memory storage stub.
 
 import { describe, it } from "node:test";
@@ -21,7 +21,7 @@ import {
 } from "../src/providers/registry.js";
 import { routingPrefixes, type DecryptedAccount } from "../src/providers/types.js";
 import { estimateTokens } from "../src/router/tokens.js";
-import { RouterState } from "../src/router/durable.js";
+import { SwitchState } from "../src/router/durable.js";
 import { GrokCliExecutor } from "../src/providers/grokcli.js";
 import { GeminiCliAdapter } from "../src/providers/geminicli.js";
 
@@ -195,10 +195,10 @@ function makeDo() {
             await fn();
         }
     };
-    return new RouterState(ctx as unknown as DurableObjectState, {} as never);
+    return new SwitchState(ctx as unknown as DurableObjectState, {} as never);
 }
 
-async function doPost(do_: RouterState, path: string, body: unknown) {
+async function doPost(do_: SwitchState, path: string, body: unknown) {
     const res = await do_.fetch(
         new Request(`https://do${path}`, {
             method: "POST",
@@ -209,7 +209,7 @@ async function doPost(do_: RouterState, path: string, body: unknown) {
     return res.json() as Promise<Record<string, unknown>>;
 }
 
-describe("RouterState Durable Object", () => {
+describe("SwitchState Durable Object", () => {
     it("round-robins across healthy accounts", async () => {
         const do_ = makeDo();
         const accounts = [

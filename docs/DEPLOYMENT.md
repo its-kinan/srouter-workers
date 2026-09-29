@@ -1,6 +1,6 @@
 # Deployment
 
-Live: `https://srouter-workers.ediprnm-keen.workers.dev`
+Live: `https://switch.ediprnm-keen.workers.dev`
 
 ## Deploy
 

@@ -1,5 +1,5 @@
 // GET /v1/models — aggregated OpenAI-compatible model list.
-// Served from the RouterState DO cache (5-min TTL), refreshed on demand from
+// Served from the SwitchState DO cache (5-min TTL), refreshed on demand from
 // each account's listModels(). Same auth as chat.
 //
 // Phase 2 (dashboard parity with SRouter's ModelsLogic.GetAllModels):

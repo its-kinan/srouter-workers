@@ -4,7 +4,7 @@
 // This module decrypts them into a DecryptedAccount and instantiates the
 // matching vendored/new executor. Executors are constructed per request from
 // the account pool — no long-lived in-memory registry (Workers are stateless);
-// round-robin and circuit-breaker state live in the RouterState DO.
+// round-robin and circuit-breaker state live in the SwitchState DO.
 
 import type { Env } from "../env.js";
 import type { AIProvider, ModelObject } from "../vendor/types/index.js";

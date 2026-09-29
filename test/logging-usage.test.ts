@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { Env } from "../src/env.js";
 import { resolveRequestLogMode } from "../src/router/completion.js";
-import { RouterState, routerShardName } from "../src/router/durable.js";
+import { SwitchState, switchShardName } from "../src/router/durable.js";
 import { ensureFreshToken } from "../src/providers/oauth-refresh.js";
 
 describe("resolveRequestLogMode", () => {
@@ -36,7 +36,7 @@ describe("resolveRequestLogMode", () => {
     });
 });
 
-describe("RouterState /usage batching", () => {
+describe("SwitchState /usage batching", () => {
     function makeDo() {
         const updates: { sql: string; params: unknown[] }[] = [];
         const store = new Map<string, unknown>();
@@ -64,7 +64,7 @@ describe("RouterState /usage batching", () => {
             }
         } as unknown as D1Database;
         const env = { DB: db } as Env;
-        const do_ = new RouterState(ctx, env);
+        const do_ = new SwitchState(ctx, env);
         return { do_, updates };
     }
 
@@ -134,7 +134,7 @@ describe("RouterState /usage batching", () => {
                 blockConcurrencyWhile: async (fn: () => Promise<void>) => void fn(),
                 waitUntil: (_p: Promise<unknown>) => {}
             } as unknown as DurableObjectState;
-            return new RouterState(ctx, { DB: db } as Env);
+            return new SwitchState(ctx, { DB: db } as Env);
         };
 
         const first = makeInstance();
@@ -159,7 +159,7 @@ describe("OAuth refresh shard", () => {
         const deps = {
             DB: {},
             MASTER_KEY: "x",
-            ROUTER_STATE: {
+            SWITCH_STATE: {
                 getByName: (name: string) => {
                     lockName = name;
                     return {
@@ -181,8 +181,8 @@ describe("OAuth refresh shard", () => {
             Date.now() - 7_200_000,
             async (s: Record<string, unknown>) => JSON.stringify(s)
         );
-        assert.equal(lockName, routerShardName("antigravity"));
-        assert.equal(lockName, "router-antigravity");
+        assert.equal(lockName, switchShardName("antigravity"));
+        assert.equal(lockName, "switch-antigravity");
         assert.equal(
             token,
             "current-access-token",

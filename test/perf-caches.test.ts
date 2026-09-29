@@ -159,7 +159,7 @@ describe("catalog isolate cache (catalog.ts)", () => {
         const env = {
             DB: {},
             MASTER_KEY: "x",
-            ROUTER_STATE: {
+            SWITCH_STATE: {
                 getByName: (_name: string) => ({
                     fetch: async (_req: Request) => {
                         doFetches++;

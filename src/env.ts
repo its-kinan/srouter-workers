@@ -5,7 +5,7 @@ export interface Env {
     /** R2 bucket: request-log archive, config snapshots (Phase 2+). */
     R2: R2Bucket;
     /** Durable Object holding router state (round-robin, circuit breaker). */
-    ROUTER_STATE: DurableObjectNamespace;
+    SWITCH_STATE: DurableObjectNamespace;
     /** Static assets binding. Unused in Phase 1 (dashboard shell is inlined
         into the bundle via scripts/inline-dashboard.mjs); reserved for the
         full React dashboard in Phase 2. */
@@ -34,7 +34,7 @@ export interface Env {
      * The table holds metadata only (token counts, latency, model, status,
      * cost estimate) — never prompt/response content. The /v1/logs/*
      * dashboard endpoints keep working regardless. Usage accounting for
-     * virtual keys is unaffected (batched separately via the RouterState DO).
+     * virtual keys is unaffected (batched separately via the SwitchState DO).
      */
     SROUTER_DISABLE_REQUEST_LOGS?: string;
     /** Set to "1" to restore full request logging (successes + errors). */

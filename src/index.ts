@@ -1,4 +1,4 @@
-// srouter-workers — Cloudflare Workers port of SRouter.
+// Switch — edge-native LLM router on Cloudflare Workers.
 // OpenAI-compatible multi-account gateway: Worker + D1 + Durable Object.
 //
 // Routes:
@@ -47,7 +47,7 @@ import { pricingRoutes } from "./routes/v1/pricing.js";
 import { oauthRoutes } from "./routes/v1/oauth.js";
 import { tunnelRoutes } from "./routes/v1/tunnel.js";
 import { databaseRoutes } from "./routes/v1/database.js";
-import { RouterState } from "./router/durable.js";
+import { SwitchState, SWITCH_GLOBAL_NAME } from "./router/durable.js";
 import { accountCacheStats, decryptAccount, type ProviderRow } from "./providers/registry.js";
 import { refreshOAuthTokens } from "./providers/oauth-refresh.js";
 import { refreshCatalogIfStale } from "./router/catalog.js";
@@ -93,7 +93,7 @@ app.use(createBodyLimitMiddleware());
 app.get("/health", (c) =>
     c.json({
         ok: true,
-        service: "srouter-workers",
+        service: "switch",
         // Per-isolate account-cache observability (resets per isolate).
         accountCache: { ...accountCacheStats }
     })
@@ -165,7 +165,7 @@ async function refreshOAuthAccount(
  * Cron sweeper — replaces SRouter's in-process setInterval token refresher.
  * Runs per minute (see wrangler.toml [triggers]): for each OAuth account whose
  * token expires within 10 minutes (or has no recorded expiry), acquire a
- * per-account refresh lock from the RouterState DO and refresh it.
+ * per-account refresh lock from the SwitchState DO and refresh it.
  */
 async function scheduled(env: Env): Promise<void> {
     const rows = await env.DB.prepare(
@@ -175,7 +175,7 @@ async function scheduled(env: Env): Promise<void> {
     )
         .bind(Date.now() + 10 * 60 * 1000)
         .all<ProviderRow>();
-    const stub = env.ROUTER_STATE.getByName("router");
+    const stub = env.SWITCH_STATE.getByName(SWITCH_GLOBAL_NAME);
 
     await Promise.allSettled(
         (rows.results ?? []).map(async (row) => {
@@ -265,4 +265,4 @@ export default {
 /** Exported for integration tests (test/dashboard.test.ts). */
 export { app };
 
-export { RouterState };
+export { SwitchState };

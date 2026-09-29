@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy srouter-workers to Cloudflare via the raw REST API.
+"""Deploy Switch to Cloudflare via the raw REST API.
 
 Steps:
   1. node scripts/inline-dashboard.mjs  (real SRouter index.html -> src/dashboard-html.ts)
@@ -9,6 +9,9 @@ Steps:
 
 Auth: uses the stored custom.cloudflare credential via dynamic_credentials.
 Run: python3 scripts/deploy.py
+First deploy of a new worker: INCLUDE_DO_MIGRATION=1 python3 scripts/deploy.py
+  (applies the SwitchState DO migration once; never re-send on updates —
+  re-sending an applied migration tag fails with 10074).
 """
 import base64
 import hashlib
@@ -24,11 +27,15 @@ sys.path.insert(0, "/opt/hatch/skills/skill-creator/bin")
 from dynamic_credentials import add_surrogate_to_request, read_json_response
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = "srouter-workers"
+SCRIPT = "switch"
 ESBUILD = "npx"  # esbuild via npx (0.28.2)
-D1_ID = "33de2eec-bd48-4bae-a491-65f2bba1c0f9"
-R2_BUCKET = "srouter-data"
+D1_ID = "0c496b54-cd98-4b6c-8f37-d7d1c27dc4f2"
+R2_BUCKET = "switch-data"
 HOSTS = ["api.cloudflare.com"]
+# Set INCLUDE_DO_MIGRATION=1 in the environment only for the very first
+# deploy of this worker (registers the SwitchState DO class). Re-sending an
+# applied migration tag fails with 10074, so this must stay off afterwards.
+INCLUDE_DO_MIGRATION = os.environ.get("INCLUDE_DO_MIGRATION") == "1"
 
 
 def api(method, path, payload=None, raw_body=None, content_type=None, bearer=None):
@@ -135,13 +142,18 @@ def main():
         "bindings": [
             {"type": "d1", "name": "DB", "id": D1_ID},
             {"type": "r2_bucket", "name": "R2", "bucket_name": R2_BUCKET},
-            {"type": "durable_object_namespace", "name": "ROUTER_STATE",
-             "class_name": "RouterState"},
+            {"type": "durable_object_namespace", "name": "SWITCH_STATE",
+             "class_name": "SwitchState"},
             {"type": "assets", "name": "ASSETS"},
             {"type": "plain_text", "name": "ENVIRONMENT", "text": "production"},
         ],
-        # NOTE: no `migrations` — the RouterState migration (tag v1) is already
-        # applied; re-sending it fails with 10074.
+        # DO migration: only on the first deploy (INCLUDE_DO_MIGRATION=1).
+        # Re-sending an applied tag fails with 10074.
+        **({"migrations": {
+            "tag": "v1",
+            "new_sqlite_classes": ["SwitchState"],
+            "new_classes": [], "renamed_classes": [], "deleted_classes": [],
+        }} if INCLUDE_DO_MIGRATION else {}),
         "assets": {"jwt": completion_jwt},
     }
     body, ctype = multipart([

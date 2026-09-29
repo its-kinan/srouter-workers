@@ -1,4 +1,4 @@
-// RouterState Durable Object — the stateful heart of the gateway.
+// SwitchState Durable Object — the stateful heart of the gateway.
 //
 // SRouter keeps this state in process memory (ProviderRegistry): round-robin
 // indexes, per-account circuit-breaker health, the aggregated model-list cache,
@@ -74,16 +74,16 @@ export const MODEL_CACHE_TTL_MS = 5 * 60_000;
 const REPORT_SAVE_DEBOUNCE_MS = 1_000;
 
 /**
- * RouterState sharding. The request path used to funnel every /route and
+ * SwitchState sharding. The request path used to funnel every /route and
  * /report through the single "router" instance. Circuit-breaker and
  * round-robin state is naturally per-provider, so each provider type gets
  * its own shard — semantics-preserving, no single funnel.
  * The "router" instance keeps the global data: model catalog, OAuth refresh
  * locks, admin reset/health.
  */
-export const ROUTER_GLOBAL_NAME = "router";
-export function routerShardName(providerType: string): string {
-    return `${ROUTER_GLOBAL_NAME}-${providerType}`;
+export const SWITCH_GLOBAL_NAME = "switch";
+export function switchShardName(providerType: string): string {
+    return `${SWITCH_GLOBAL_NAME}-${providerType}`;
 }
 
 const RATE_LIMIT_PATTERNS = [
@@ -115,7 +115,7 @@ const LATENCY_STALE_MS = 24 * 60 * 60 * 1000;
 /** Cap on stored latency entries (only recently-seen accounts are kept). */
 const MAX_LATENCY_ENTRIES = 1000;
 
-export class RouterState {
+export class SwitchState {
     private ctx: DurableObjectState;
     private env: Env;
     private state: PersistedState = emptyState();

@@ -1,7 +1,7 @@
 # Switch — edge-native LLM router on Cloudflare Workers.
 # Deploy with: python3 scripts/deploy.py (restores cron; never reapply the DO migration).
 
-name = "srouter-workers"
+name = "switch"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
@@ -15,23 +15,23 @@ ENVIRONMENT = "production"
 # --- D1: accounts, keys, logs, settings, admin ---
 [[d1_databases]]
 binding = "DB"
-database_name = "srouter-db"
-database_id = "33de2eec-bd48-4bae-a491-65f2bba1c0f9"
+database_name = "switch-db"
+database_id = "0c496b54-cd98-4b6c-8f37-d7d1c27dc4f2"
 migrations_dir = "src/db/migrations"
 
 # --- R2: log archive / config snapshots (Phase 2+) ---
 [[r2_buckets]]
 binding = "R2"
-bucket_name = "srouter-data"
+bucket_name = "switch-data"
 
 # --- Durable Object: router state (round-robin, circuit breaker, model cache) ---
 [[durable_objects.bindings]]
-name = "ROUTER_STATE"
-class_name = "RouterState"
+name = "SWITCH_STATE"
+class_name = "SwitchState"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["RouterState"]
+new_sqlite_classes = ["SwitchState"]
 
 # --- Cron: OAuth token sweeper (replaces SRouter's in-process setInterval) ---
 [triggers]

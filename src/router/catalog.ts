@@ -1,6 +1,6 @@
 // Model catalog with stale-while-revalidate + single-flight rebuilds.
 //
-// Previously, every RouterState model-cache miss (5-min TTL) made the
+// Previously, every SwitchState model-cache miss (5-min TTL) made the
 // request path fan out listModels() to ALL ~342 accounts inline — a cache
 // stampede under load (342 subrequests x N concurrent requests). Now:
 //   - the cron rebuilds the catalog when stale (single-flighted via the
@@ -12,7 +12,7 @@
 import type { Env } from "../env.js";
 import {
     MODEL_CACHE_TTL_MS,
-    ROUTER_GLOBAL_NAME
+    SWITCH_GLOBAL_NAME
 } from "./durable.js";
 import { listAllModels, loadAccounts } from "../providers/registry.js";
 import type { ModelObject } from "../vendor/types/index.js";
@@ -24,7 +24,7 @@ const CATALOG_BUILD_LOCK_TTL_MS = 120_000;
 const COLD_START_WAIT_MS = 1_000;
 
 function globalStub(env: Env): DurableObjectStub {
-    return env.ROUTER_STATE.getByName(ROUTER_GLOBAL_NAME);
+    return env.SWITCH_STATE.getByName(SWITCH_GLOBAL_NAME);
 }
 
 interface CatalogRead {

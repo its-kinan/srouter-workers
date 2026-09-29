@@ -9,7 +9,7 @@
 // Flow:
 //   1. loadAccounts (decrypt provider credentials with MASTER_KEY)
 //   2. resolveModel (prefix match, else DO-cached aggregated catalog)
-//   3. orderedCandidates (RouterState DO: round-robin + circuit breaker)
+//   3. orderedCandidates (SwitchState DO: round-robin + circuit breaker)
 //   4. Try candidates in order; FAILOVER ONLY BEFORE THE FIRST CHUNK — once
 //      bytes flow to the caller we are committed to that provider
 //   5. Report success/failure back to the DO; log the request via waitUntil;
@@ -33,7 +33,7 @@ import {
     providerTypeForPrefix,
     stripRoutingPrefix
 } from "../providers/registry.js";
-import { routerShardName } from "./durable.js";
+import { switchShardName } from "./durable.js";
 import { getModelCatalog } from "./catalog.js";
 import type { DecryptedAccount } from "../providers/types.js";
 import type {
@@ -113,12 +113,12 @@ export function resolveRequestLogMode(env: Env): RequestLogMode {
 }
 
 function routerShard(env: Env, providerType: string): DurableObjectStub {
-    return env.ROUTER_STATE.getByName(routerShardName(providerType));
+    return env.SWITCH_STATE.getByName(switchShardName(providerType));
 }
 
 // --- Isolate-local routing state ---
 // /route and /report used to be awaited inline on the request path, funneling
-// every request through the single RouterState DO instance. Under load that
+// every request through the single SwitchState DO instance. Under load that
 // DO became the choke point (each call = JSON round-trip + full-state
 // storage.put). Now:
 //   - candidate ordering is computed locally: isolate-local round-robin per
@@ -519,7 +519,7 @@ export async function executeCompletion(
                         }
                         if (apiKeyRow) {
                             // Batched usage accounting: deltas accumulate in the
-                            // provider's RouterState DO shard and flush to D1
+                            // provider's SwitchState DO shard and flush to D1
                             // every ~30s (see durable.ts /usage). Tradeoff:
                             // quota/credit reads may lag actual usage by up to
                             // ~30s, and deltas are lost if a DO instance is

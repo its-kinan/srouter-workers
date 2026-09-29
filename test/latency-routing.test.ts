@@ -1,7 +1,7 @@
 // Regression tests for latency-aware routing:
 // - isolate-local latency EMA + latency-sorted candidate ordering
 //   (src/router/completion.ts)
-// - per-account latency EMA in the RouterState DO shard (POST /report
+// - per-account latency EMA in the SwitchState DO shard (POST /report
 //   latencyMs, GET /health exposure, /reset clearing) (src/router/durable.ts)
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import {
     reportLater,
     resetLocalRoutingStateForTests
 } from "../src/router/completion.js";
-import { RouterState } from "../src/router/durable.js";
+import { SwitchState } from "../src/router/durable.js";
 import type { DecryptedAccount } from "../src/providers/types.js";
 
 function makeAccount(id: string): DecryptedAccount {
@@ -27,7 +27,7 @@ function makeAccount(id: string): DecryptedAccount {
     };
 }
 
-/** Fake env whose RouterState stub captures /report bodies. */
+/** Fake env whose SwitchState stub captures /report bodies. */
 function makeEnv(captured: unknown[]) {
     const stub = {
         fetch: async (req: Request) => {
@@ -36,7 +36,7 @@ function makeEnv(captured: unknown[]) {
         }
     };
     return {
-        ROUTER_STATE: { getByName: (_name: string) => stub }
+        SWITCH_STATE: { getByName: (_name: string) => stub }
     } as unknown as Env;
 }
 
@@ -115,7 +115,7 @@ describe("orderCandidatesLocally — latency-aware ordering", () => {
     });
 });
 
-describe("RouterState DO — latency EMA", () => {
+describe("SwitchState DO — latency EMA", () => {
     function makeDo() {
         const store = new Map<string, unknown>();
         const storage = {
@@ -130,10 +130,10 @@ describe("RouterState DO — latency EMA", () => {
             waitUntil: (_p: Promise<unknown>) => {}
         } as unknown as DurableObjectState;
         const env = {} as Env;
-        return new RouterState(ctx, env);
+        return new SwitchState(ctx, env);
     }
 
-    const postReport = (do_: RouterState, body: unknown) =>
+    const postReport = (do_: SwitchState, body: unknown) =>
         do_.fetch(
             new Request("https://do/report", {
                 method: "POST",
@@ -142,7 +142,7 @@ describe("RouterState DO — latency EMA", () => {
             })
         );
 
-    const getLatency = async (do_: RouterState) => {
+    const getLatency = async (do_: SwitchState) => {
         const res = await do_.fetch(new Request("https://do/health"));
         const json = (await res.json()) as {
             latency: Record<string, { emaMs: number; samples: number }>;

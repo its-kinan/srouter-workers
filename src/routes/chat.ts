@@ -4,7 +4,7 @@
 //   1. apiKeyAuth middleware (auth + quota checks)
 //   2. rateLimit middleware (per-key requests/minute)
 //   3. Validate body, then run the shared completion engine
-//      (src/router/completion.ts): model resolution, RouterState
+//      (src/router/completion.ts): model resolution, SwitchState
 //      round-robin + circuit breaker, failover before the first chunk,
 //      request logging and key usage accounting.
 
