@@ -45,6 +45,15 @@ export interface Env {
      * to the default; <= 0 disables pruning.
      */
     SROUTER_LOG_RETENTION_DAYS?: string;
+    /**
+     * Max upstream attempts per model candidate in the chat-completions
+     * failover loop. Bounds worst-case subrequest burn when many accounts
+     * are dead (Cloudflare kills the invocation at ~50 subrequests).
+     * Default 10. Missing, non-numeric, or <= 0 values fall back to the
+     * default. Cooldown-filtered candidates don't count — only real
+     * upstream attempts.
+     */
+    SROUTER_MAX_ATTEMPTS?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */
     BRAVE_API_KEY?: string;
     TAVILY_API_KEY?: string;

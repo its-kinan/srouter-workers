@@ -112,6 +112,20 @@ export function resolveRequestLogMode(env: Env): RequestLogMode {
     return "errors";
 }
 
+/** Default cap on upstream attempts per model candidate in the failover loop. */
+export const DEFAULT_MAX_ATTEMPTS = 10;
+
+/**
+ * Max upstream attempts per model candidate, from SROUTER_MAX_ATTEMPTS.
+ * Missing, non-numeric, or <= 0 values fall back to DEFAULT_MAX_ATTEMPTS.
+ * Exported for unit tests.
+ */
+export function resolveMaxAttempts(env: Env): number {
+    const raw = env.SROUTER_MAX_ATTEMPTS;
+    const parsed = raw === undefined || raw === null ? NaN : parseInt(String(raw), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_ATTEMPTS;
+}
+
 function routerShard(env: Env, providerType: string): DurableObjectStub {
     return env.SWITCH_STATE.getByName(switchShardName(providerType));
 }
@@ -561,6 +575,12 @@ export async function executeCompletion(
 
     let lastErrorMsg = "all providers failed";
     let lastStatus: ContentfulStatusCode = 502;
+    // Attempt-cap bookkeeping: bounds worst-case subrequest burn when many
+    // accounts are dead (see the slice below). Only real upstream attempts
+    // count — cooldown-filtered candidates never reach the loop.
+    let attemptCapHit = false;
+    let attemptedAccounts = 0;
+    let totalCandidateAccounts = 0;
 
     for await (const attempt of runCandidateAttempts(env.DB, body.model, tracker)) {
         const { currentModel, isFallbackAttempt } = attempt;
@@ -582,7 +602,19 @@ export async function executeCompletion(
                 stream: true
             }) as ChatCompletionRequest;
 
-        for (const account of candidateOrdered) {
+        // Bound worst-case subrequest burn: with N dead accounts the loop
+        // below would otherwise try all of them, exhausting Cloudflare's
+        // ~50-subrequest budget and killing the invocation. Cap actual
+        // upstream attempts per model candidate (SROUTER_MAX_ATTEMPTS,
+        // default 10) — realistic failover never needs more. Pinned
+        // requests resolve to a single account and never hit the cap.
+        const maxAttempts = resolveMaxAttempts(env);
+        const attemptAccounts = candidateOrdered.slice(0, maxAttempts);
+        totalCandidateAccounts += candidateOrdered.length;
+        attemptedAccounts += attemptAccounts.length;
+        if (candidateOrdered.length > maxAttempts) attemptCapHit = true;
+
+        for (const account of attemptAccounts) {
             // Lazy token refresh (SRouter parity): ensure OAuth tokens are fresh
             // before routing. If refresh fails, continue with the current token;
             // the upstream 401 will trigger failover to the next account.
@@ -846,8 +878,15 @@ export async function executeCompletion(
     // In "errors" (default) and "all" modes, log one error row for
     // investigation. Per-attempt failover failures are already tracked in the
     // DO circuit breaker via reportLater(); only the terminal outcome is logged
-    // here to avoid a D1 write per failed attempt during outages.
-    logTerminalError(lastStatus, lastErrorMsg, tracker, body.model);
+    // here to avoid a D1 write per failed attempt during outages. When the
+    // attempt cap stopped failover early, say so — otherwise an operator
+    // can't tell "10 accounts all failed" from "183 accounts, gave up at 10".
+    const capNote =
+        attemptCapHit && lastStatus === 502
+            ? ` [attempt_cap_reached: attempted ${attemptedAccounts} of ${totalCandidateAccounts} candidate accounts]`
+            : "";
+    const finalErrorMsg = lastErrorMsg + capNote;
+    logTerminalError(lastStatus, finalErrorMsg, tracker, body.model);
 
     return {
         kind: "error",
@@ -855,7 +894,7 @@ export async function executeCompletion(
         message:
             lastStatus === 404
                 ? lastErrorMsg
-                : `Upstream request failed: ${lastErrorMsg.slice(0, 300)}`,
+                : `Upstream request failed: ${finalErrorMsg.slice(0, 300)}`,
         errorType: lastStatus === 404 ? "invalid_request_error" : "server_error",
         code: lastStatus === 404 ? "model_not_found" : "upstream_error"
     };
