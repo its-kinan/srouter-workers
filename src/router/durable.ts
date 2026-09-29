@@ -12,7 +12,11 @@
 // RPC is plain fetch+JSON against the DO stub:
 //
 //   POST /route   { accounts: [{id, base}] } -> { orderedIds: string[] }
-//   POST /report  { accountId, ok, error?, retryAfterMs? } -> { ok: true }
+//   POST /report  { accountId, ok, error?, retryAfterMs?, latencyMs? } -> { ok: true }
+//                   latencyMs = time-to-first-chunk for this attempt; feeds the
+//                   per-account latency EMA (successes only) used for the admin
+//                   health view. The worker's request-path ordering keeps its
+//                   own isolate-local EMA — the DO copy is the durable record.
 //   POST /usage   { keyId, tokens, cost } -> accumulates usage deltas, flushes ~30s
 //   GET  /health  -> { states: Record<accountId, CircuitView> }
 //   POST /models  { models } -> caches aggregated model list
@@ -48,6 +52,13 @@ interface PersistedState {
     circuit: Record<string, CircuitEntry>;
     modelCache: { models: ModelObject[]; cachedAt: number } | null;
     refreshLocks: Record<string, number>;
+    /**
+     * Per-account upstream latency EMA (time-to-first-chunk, ms), updated on
+     * successful attempts only — failures must not poison it. Surfaced in
+     * GET /health for the admin view; pruned on save (stale entries dropped,
+     * map capped).
+     */
+    latency: Record<string, { ema: number; samples: number; updatedAt: number }>;
 }
 
 const DEFAULT_COOLDOWN_MS = 30_000;
@@ -93,8 +104,16 @@ const emptyState = (): PersistedState => ({
     roundRobin: {},
     circuit: {},
     modelCache: null,
-    refreshLocks: {}
+    refreshLocks: {},
+    latency: {}
 });
+
+/** EMA weight for each new latency sample (successes only). */
+const LATENCY_EMA_ALPHA = 0.2;
+/** Drop latency entries not seen in this long (stale accounts). */
+const LATENCY_STALE_MS = 24 * 60 * 60 * 1000;
+/** Cap on stored latency entries (only recently-seen accounts are kept). */
+const MAX_LATENCY_ENTRIES = 1000;
 
 export class RouterState {
     private ctx: DurableObjectState;
@@ -138,7 +157,25 @@ export class RouterState {
     }
 
     private save(): Promise<void> {
+        this.pruneLatency();
         return this.ctx.storage.put("state", this.state);
+    }
+
+    /**
+     * Keep the latency map bounded: drop entries not seen in 24h, then cap
+     * at MAX_LATENCY_ENTRIES by recency. Runs on every persisted save.
+     */
+    private pruneLatency(): void {
+        const now = Date.now();
+        const lat = this.state.latency;
+        for (const id of Object.keys(lat)) {
+            if (now - (lat[id]?.updatedAt ?? 0) > LATENCY_STALE_MS) delete lat[id];
+        }
+        const ids = Object.keys(lat);
+        if (ids.length > MAX_LATENCY_ENTRIES) {
+            ids.sort((a, b) => (lat[a]?.updatedAt ?? 0) - (lat[b]?.updatedAt ?? 0));
+            for (const id of ids.slice(0, ids.length - MAX_LATENCY_ENTRIES)) delete lat[id];
+        }
     }
 
     /**
@@ -271,7 +308,8 @@ export class RouterState {
         accountId: string,
         ok: boolean,
         error?: string,
-        retryAfterMs?: number
+        retryAfterMs?: number,
+        latencyMs?: number
     ): Promise<void> {
         const h = this.healthOf(accountId);
         const now = Date.now();
@@ -281,6 +319,20 @@ export class RouterState {
             h.lastSuccessTime = now;
             h.cooldownUntil = undefined;
             h.lastErrorMessage = undefined;
+            // Latency EMA: successes only — a failed attempt's timing says
+            // nothing about the account's healthy speed and must not poison
+            // the average used for ordering.
+            if (typeof latencyMs === "number" && Number.isFinite(latencyMs) && latencyMs >= 0) {
+                const prev = this.state.latency[accountId];
+                this.state.latency[accountId] = {
+                    ema:
+                        prev === undefined
+                            ? latencyMs
+                            : prev.ema + LATENCY_EMA_ALPHA * (latencyMs - prev.ema),
+                    samples: (prev?.samples ?? 0) + 1,
+                    updatedAt: now
+                };
+            }
         } else {
             h.consecutiveFailures += 1;
             h.lastFailureTime = now;
@@ -317,8 +369,15 @@ export class RouterState {
                     ok: boolean;
                     error?: string;
                     retryAfterMs?: number;
+                    latencyMs?: number;
                 };
-                await this.report(body.accountId, body.ok, body.error, body.retryAfterMs);
+                await this.report(
+                    body.accountId,
+                    body.ok,
+                    body.error,
+                    body.retryAfterMs,
+                    body.latencyMs
+                );
                 return json({ ok: true });
             }
             if (request.method === "POST" && url.pathname === "/usage") {
@@ -354,7 +413,11 @@ export class RouterState {
                 for (const id of Object.keys(this.state.circuit)) {
                     states[id] = this.healthOf(id);
                 }
-                return json({ states, roundRobin: this.state.roundRobin });
+                const latency: Record<string, { emaMs: number; samples: number }> = {};
+                for (const [id, l] of Object.entries(this.state.latency)) {
+                    latency[id] = { emaMs: Math.round(l.ema), samples: l.samples };
+                }
+                return json({ states, roundRobin: this.state.roundRobin, latency });
             }
             if (request.method === "POST" && url.pathname === "/models") {
                 const body = (await request.json()) as { models: ModelObject[] };
@@ -380,8 +443,13 @@ export class RouterState {
             }
             if (request.method === "POST" && url.pathname === "/reset") {
                 const body = (await request.json().catch(() => ({}))) as { accountId?: string };
-                if (body.accountId) delete this.state.circuit[body.accountId];
-                else this.state.circuit = {};
+                if (body.accountId) {
+                    delete this.state.circuit[body.accountId];
+                    delete this.state.latency[body.accountId];
+                } else {
+                    this.state.circuit = {};
+                    this.state.latency = {};
+                }
                 await this.save();
                 return json({ ok: true });
             }

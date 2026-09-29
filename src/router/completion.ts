@@ -132,8 +132,43 @@ const localRoundRobin = new Map<string, number>();
 const localCooldownUntil = new Map<string, number>();
 const LOCAL_COOLDOWN_MS = 30_000;
 
-/** Order candidates without touching the DO: skip cooling accounts, round-robin the rest. */
-function orderCandidatesLocally(candidates: DecryptedAccount[]): DecryptedAccount[] {
+// --- Isolate-local upstream latency tracking ---
+// reportLater() records each attempt's time-to-first-chunk per account id as
+// an exponential moving average (successes only — failures must not poison
+// it; they are tracked separately via the cooldown above and the DO circuit
+// breaker). orderCandidatesLocally() then tries faster accounts first.
+//
+// Tradeoff: pure fastest-first concentrates first-attempt load on the
+// quickest account instead of spreading it. Per-key upstream rate limits are
+// still guarded by failover + cooldown (a 429'd account cools down and is
+// skipped), so the worst case is an extra failover hop, not an outage.
+// Accounts with no samples yet sort before measured ones (discovery): a new
+// account is tried promptly, measured once, then settles into its rank.
+const LATENCY_EMA_ALPHA = 0.2;
+const MAX_LATENCY_ENTRIES = 2000;
+const localLatencyEma = new Map<string, number>();
+
+/** Exported for unit tests (test/latency-routing.test.ts). */
+export function recordLatencySample(accountId: string, latencyMs: number): void {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+    const prev = localLatencyEma.get(accountId);
+    const ema = prev === undefined ? latencyMs : prev + LATENCY_EMA_ALPHA * (latencyMs - prev);
+    // Delete + re-set so the entry refreshes its insertion-order recency.
+    localLatencyEma.delete(accountId);
+    localLatencyEma.set(accountId, ema);
+    if (localLatencyEma.size > MAX_LATENCY_ENTRIES) {
+        const oldest = localLatencyEma.keys().next();
+        if (!oldest.done) localLatencyEma.delete(oldest.value);
+    }
+}
+
+/**
+ * Order candidates without touching the DO: skip cooling accounts, then
+ * prefer lower latency EMA (unknown first for discovery). Falls back to the
+ * previous round-robin rotation when no account in the pool has latency
+ * data yet (cold isolate) — identical behavior to before.
+ */
+export function orderCandidatesLocally(candidates: DecryptedAccount[]): DecryptedAccount[] {
     const now = Date.now();
     const healthy: DecryptedAccount[] = [];
     for (const a of candidates) {
@@ -147,22 +182,54 @@ function orderCandidatesLocally(candidates: DecryptedAccount[]): DecryptedAccoun
     // If everything is cooling, try them anyway (best effort beats 503).
     const pool = healthy.length > 0 ? healthy : candidates;
     if (pool.length <= 1) return pool;
-    const base = pool[0]!.providerType;
-    const idx = (localRoundRobin.get(base) ?? 0) % pool.length;
-    localRoundRobin.set(base, idx + 1);
-    return [...pool.slice(idx), ...pool.slice(0, idx)];
+    const anyLatency = pool.some((a) => localLatencyEma.has(a.id));
+    if (!anyLatency) {
+        const base = pool[0]!.providerType;
+        const idx = (localRoundRobin.get(base) ?? 0) % pool.length;
+        localRoundRobin.set(base, idx + 1);
+        return [...pool.slice(idx), ...pool.slice(0, idx)];
+    }
+    // Stable sort: unknown EMA first (discovery), then fastest EMA first.
+    // Cooldown filtering above still applies — a fast but broken account is
+    // skipped before it ever reaches this sort.
+    return [...pool].sort((a, b) => {
+        const ea = localLatencyEma.get(a.id);
+        const eb = localLatencyEma.get(b.id);
+        if (ea === undefined && eb === undefined) return 0;
+        if (ea === undefined) return -1;
+        if (eb === undefined) return 1;
+        return ea - eb;
+    });
 }
 
-/** Fire-and-forget circuit report to the provider's DO shard. Never blocks. */
-function reportLater(
+/** Drop isolate-local routing state (tests only). */
+export function resetLocalRoutingStateForTests(): void {
+    localRoundRobin.clear();
+    localCooldownUntil.clear();
+    localLatencyEma.clear();
+}
+
+/**
+ * Fire-and-forget circuit report to the provider's DO shard. Never blocks.
+ * latencyMs (time to first chunk for this attempt) updates the isolate-local
+ * EMA on success and is forwarded to the DO shard for the admin health view;
+ * failures never touch the EMA.
+ */
+/** Exported for unit tests (test/latency-routing.test.ts). */
+export function reportLater(
     ctx: { waitUntil(p: Promise<unknown>): void },
     env: Env,
     account: DecryptedAccount,
     ok: boolean,
-    error?: string
+    error?: string,
+    latencyMs?: number
 ): void {
-    if (ok) localCooldownUntil.delete(account.id);
-    else localCooldownUntil.set(account.id, Date.now() + LOCAL_COOLDOWN_MS);
+    if (ok) {
+        localCooldownUntil.delete(account.id);
+        if (latencyMs !== undefined) recordLatencySample(account.id, latencyMs);
+    } else {
+        localCooldownUntil.set(account.id, Date.now() + LOCAL_COOLDOWN_MS);
+    }
     ctx.waitUntil(
         (async () => {
             try {
@@ -170,7 +237,7 @@ function reportLater(
                     new Request("https://do/report", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ accountId: account.id, ok, error })
+                        body: JSON.stringify({ accountId: account.id, ok, error, latencyMs })
                     })
                 );
             } catch {
@@ -292,7 +359,13 @@ export async function executeCompletion(
 
     // Decrypt only the providers this request (and its fallback targets)
     // can touch — the isolate cache makes repeat requests ~free.
-    const accounts = await loadAccountsForModel(env.DB, env.MASTER_KEY, body.model);
+    // The account load (D1 + decrypt) and the catalog fetch (DO) are
+    // independent — run them concurrently so a cold isolate pays max(), not
+    // sum(), of the two. resolveModel below needs both.
+    const [accounts, catalog] = await Promise.all([
+        loadAccountsForModel(env.DB, env.MASTER_KEY, body.model),
+        getModelCatalog(env, executionCtx)
+    ]);
     if (accounts.length === 0) {
         return {
             kind: "error",
@@ -303,9 +376,7 @@ export async function executeCompletion(
         };
     }
 
-    // Aggregated model catalog for bare-model resolution, served
-    // stale-while-revalidate (fetched once per request, never inline fan-out).
-    const catalog = await getModelCatalog(env, executionCtx);
+    // (both fetched concurrently above; resolveModel needs both).
 
     /**
      * Request logging mode for the `request_logs` table:
@@ -539,12 +610,14 @@ export async function executeCompletion(
             const adapter = buildAdapter(account);
             const gen = adapter.chatCompletionStream(candidateUpstreamReq(account.id));
 
+            // Time-to-first-chunk for latency-aware routing (EMA per account).
+            const attemptStart = Date.now();
             let first: IteratorResult<ChatCompletionChunk>;
             try {
                 first = await gen.next();
             } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                reportLater(executionCtx, env, account, false, msg);
+                reportLater(executionCtx, env, account, false, msg, Date.now() - attemptStart);
                 tracker.lastError = err instanceof Error ? err : msg;
                 if (!tracker.fallbackReason) tracker.fallbackReason = msg;
                 lastErrorMsg = msg;
@@ -552,7 +625,14 @@ export async function executeCompletion(
                 continue; // failover: nothing was sent to the client yet
             }
             if (first.done) {
-                reportLater(executionCtx, env, account, false, "empty response stream");
+                reportLater(
+                    executionCtx,
+                    env,
+                    account,
+                    false,
+                    "empty response stream",
+                    Date.now() - attemptStart
+                );
                 tracker.lastError = new Error("empty response stream");
                 if (!tracker.fallbackReason) tracker.fallbackReason = "empty response stream";
                 lastErrorMsg = "empty response stream";
@@ -561,7 +641,7 @@ export async function executeCompletion(
             }
 
             // First chunk arrived: committed to this provider.
-            reportLater(executionCtx, env, account, true);
+            reportLater(executionCtx, env, account, true, undefined, Date.now() - attemptStart);
             if (isFallbackAttempt) {
                 tracker.fallbackOccurred = true;
                 tracker.fallbackPath.push(currentModel);

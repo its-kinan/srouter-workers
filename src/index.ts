@@ -224,6 +224,31 @@ async function scheduled(env: Env): Promise<void> {
     } catch (err) {
         console.error("[cron] model catalog refresh failed:", err);
     }
+
+    // request_logs retention: one cheap DELETE per day (runs on the 00:00
+    // UTC cron tick of the existing * * * * * schedule — no extra schedule
+    // needed). Keeps the table bounded now that only terminal errors are
+    // logged. If the 00:00 tick is ever missed, pruning simply waits a day.
+    const nowUtc = new Date();
+    if (nowUtc.getUTCHours() === 0 && nowUtc.getUTCMinutes() === 0) {
+        const days = parseInt(env.SROUTER_LOG_RETENTION_DAYS ?? "30", 10);
+        if (Number.isFinite(days) && days > 0) {
+            try {
+                const cutoff = Date.now() - days * 86_400_000;
+                const res = await env.DB.prepare(
+                    "DELETE FROM request_logs WHERE created_at < ?"
+                )
+                    .bind(cutoff)
+                    .run();
+                console.log(
+                    `[cron] pruned request_logs older than ${days}d ` +
+                        `(${(res as { changes?: number }).changes ?? "?"} rows)`
+                );
+            } catch (err) {
+                console.error("[cron] request_logs prune failed:", err);
+            }
+        }
+    }
 }
 
 export default {

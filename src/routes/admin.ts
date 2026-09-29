@@ -200,17 +200,20 @@ adminRoutes.get("/admin/summary", async (c) => {
                 return (await res.json()) as {
                     states: Record<string, unknown>;
                     roundRobin: Record<string, number>;
+                    latency?: Record<string, { emaMs: number; samples: number }>;
                 };
             })
         );
         const states: Record<string, unknown> = {};
         const roundRobin: Record<string, number> = {};
+        const latency: Record<string, { emaMs: number; samples: number }> = {};
         for (const s of settled) {
             if (s.status !== "fulfilled") continue;
             Object.assign(states, s.value.states);
             Object.assign(roundRobin, s.value.roundRobin);
+            Object.assign(latency, s.value.latency ?? {});
         }
-        routerHealth = { states, roundRobin };
+        routerHealth = { states, roundRobin, latency };
     } catch {
         routerHealth = null;
     }

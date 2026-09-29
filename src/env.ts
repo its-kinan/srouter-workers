@@ -39,6 +39,12 @@ export interface Env {
     SROUTER_DISABLE_REQUEST_LOGS?: string;
     /** Set to "1" to restore full request logging (successes + errors). */
     SROUTER_LOG_ALL_REQUESTS?: string;
+    /**
+     * Retention for `request_logs` rows, in days. The cron prunes rows older
+     * than this once a day. Default 30. Non-numeric/empty values fall back
+     * to the default; <= 0 disables pruning.
+     */
+    SROUTER_LOG_RETENTION_DAYS?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */
     BRAVE_API_KEY?: string;
     TAVILY_API_KEY?: string;

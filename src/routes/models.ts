@@ -167,6 +167,33 @@ modelsRoutes.get("/models", apiKeyAuth, async (c) => {
     const cacheControl = c.req.header("cache-control") ?? "";
     const revalidate = cacheControl.includes("no-cache") || cacheControl.includes("no-store");
 
+    // The response varies per caller when the key carries an allowed_models
+    // restriction — edge-caching by URL alone would leak one key's filtered
+    // list to another. Only the unrestricted (full) list is edge-cacheable.
+    let restricted = false;
+    if (c.get("authType") === "api_key") {
+        const row = c.get("apiKeyRow") as { allowed_models?: string | null } | undefined;
+        if (row?.allowed_models) {
+            try {
+                const allowed = JSON.parse(row.allowed_models) as string[];
+                restricted = Array.isArray(allowed) && allowed.length > 0;
+            } catch {
+                restricted = false;
+            }
+        }
+    }
+
+    // Edge cache (caches.default), 60s TTL, keyed by URL only. The underlying
+    // catalog rebuilds at most every few minutes via cron and the merged
+    // custom/combo rows change rarely, so 60s staleness is acceptable.
+    // `caches` is undefined under node --test; edgeCache() returns null there.
+    const edge = !force && !revalidate && !restricted ? edgeCache() : null;
+    const cacheKey = edge ? new Request(c.req.url) : null;
+    if (edge && cacheKey) {
+        const hit = await edge.match(cacheKey);
+        if (hit) return hit;
+    }
+
     let models = await getMergedModels(c.env, { skipCache: force }, maybeExecutionCtx(c));
 
     const bgCtx = maybeExecutionCtx(c);
@@ -192,8 +219,28 @@ modelsRoutes.get("/models", apiKeyAuth, async (c) => {
     }
 
     c.header("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
-    return c.json({ object: "list", data: models });
+    const response = c.json({ object: "list", data: models });
+    if (edge && cacheKey) {
+        // Populate the edge cache in the background; the stored response
+        // carries the Cache-Control above, bounding staleness at 60s.
+        const putCtx = maybeExecutionCtx(c);
+        const put = edge.put(cacheKey, response.clone()).catch(() => {});
+        if (putCtx) putCtx.waitUntil(put);
+        else await put;
+    }
+    return response;
 });
+
+/**
+ * The Workers edge cache (caches.default). Null outside the Workers runtime
+ * (e.g. under node --test), where the endpoint simply computes every time.
+ * The cast avoids a conflict between the WebWorker lib's CacheStorage and
+ * @cloudflare/workers-types' augmentation.
+ */
+function edgeCache(): Cache | null {
+    const storage = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+    return storage?.default ?? null;
+}
 
 // GET /v1/models/:model — single model lookup (SRouter's ModelsController.GetModelById).
 // The `:model{.+}` pattern allows slashes in model ids
