@@ -43,6 +43,7 @@ describe("RouterState /usage batching", () => {
         const storage = {
             get: async (k: string) => store.get(k),
             put: async (k: string, v: unknown) => void store.set(k, v),
+            delete: async (k: string) => void store.delete(k),
             setAlarm: async (_t: number) => {}
         };
         const ctx = {
@@ -108,6 +109,47 @@ describe("RouterState /usage batching", () => {
         );
         await do_.alarm();
         assert.equal(updates.length, 0);
+    });
+
+    it("deltas survive DO eviction: a fresh instance waking for the alarm still flushes", async () => {
+        // Shared storage backing two DO instances (eviction simulation).
+        const store = new Map<string, unknown>();
+        const updates: { sql: string; params: unknown[] }[] = [];
+        const db = {
+            prepare: (sql: string) => ({
+                bind: (...params: unknown[]) => ({ _sql: sql, _params: params })
+            }),
+            batch: async (stmts: { _sql: string; _params: unknown[] }[]) => {
+                for (const s of stmts) updates.push({ sql: s._sql, params: s._params });
+            }
+        } as unknown as D1Database;
+        const makeInstance = () => {
+            const ctx = {
+                storage: {
+                    get: async (k: string) => store.get(k),
+                    put: async (k: string, v: unknown) => void store.set(k, v),
+                    delete: async (k: string) => void store.delete(k),
+                    setAlarm: async (_t: number) => {}
+                },
+                blockConcurrencyWhile: async (fn: () => Promise<void>) => void fn(),
+                waitUntil: (_p: Promise<unknown>) => {}
+            } as unknown as DurableObjectState;
+            return new RouterState(ctx, { DB: db } as Env);
+        };
+
+        const first = makeInstance();
+        await first.fetch(
+            new Request("https://do/usage", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keyId: "key_9", tokens: 42, cost: 0.004 })
+            })
+        );
+        // Instance evicted: a fresh one with empty memory wakes for the alarm.
+        const second = makeInstance();
+        await second.alarm();
+        assert.equal(updates.length, 1);
+        assert.deepEqual(updates[0]!.params, [42, 0.004, "key_9"]);
     });
 });
 

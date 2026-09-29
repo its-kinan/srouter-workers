@@ -104,14 +104,24 @@ export class RouterState {
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
     /**
-     * Batched virtual-key usage deltas: { keyId: { tokens, cost } }.
-     * POST /usage accumulates here in memory; the DO alarm flushes to D1
-     * (~30s). In-memory only by design (persisting per-request would defeat
-     * the batching). Tradeoff: deltas are lost if the DO instance is evicted
-     * before the alarm fires, and quota/credit reads lag up to ~30s.
+     * Batched virtual-key usage deltas, persisted in DO storage as
+     * [keyId, { tokens, cost }][] under "usageDeltas".
+     * POST /usage merges one delta per completed request; the DO alarm
+     * flushes to D1 (~30s). Storage (not memory) is the source of truth
+     * because DO instances are evicted when idle — a fresh instance waking
+     * for the alarm must still see the deltas.
+     * All usage mutations run through `usageChain` so a POST can never
+     * interleave with a flush. Tradeoff: quota/credit reads lag up to ~30s.
      */
-    private usageDeltas = new Map<string, { tokens: number; cost: number }>();
+    private usageChain: Promise<void> = Promise.resolve();
     private usageAlarmScheduled = false;
+
+    /** Serialize usage mutations so a POST can never interleave with a flush. */
+    private mutateUsage(fn: () => Promise<void>): Promise<void> {
+        const run = this.usageChain.then(fn);
+        this.usageChain = run.catch(() => {});
+        return run;
+    }
 
     constructor(ctx: DurableObjectState, env: Env) {
         this.ctx = ctx;
@@ -174,35 +184,35 @@ export class RouterState {
     }
 
     /**
-     * Flush accumulated usage deltas to D1 in one batch. Increments arriving
-     * while the flush runs are kept in the map (we swap the map before
-     * writing, so nothing is lost or double-counted).
+     * Flush accumulated usage deltas to D1 in one batch. Reads the deltas
+     * from DO storage and deletes the key before the D1 write, so deltas
+     * arriving mid-flush accumulate fresh for the next alarm instead of
+     * being lost or double-counted.
      */
     private async flushUsage(): Promise<void> {
-        if (this.usageDeltas.size === 0) return;
-        const batch = this.usageDeltas;
-        this.usageDeltas = new Map();
-        try {
-            const stmts = [...batch.entries()].map(([keyId, d]) =>
-                this.env.DB.prepare(
-                    `UPDATE api_keys
-                     SET usage_tokens = usage_tokens + ?,
-                         usage_cost = usage_cost + ?
-                     WHERE id = ?`
-                ).bind(d.tokens, d.cost, keyId)
-            );
-            await this.env.DB.batch(stmts);
-        } catch (err) {
-            // Re-queue on failure so usage isn't silently dropped; the next
-            // alarm will retry.
-            for (const [keyId, d] of batch) {
-                const cur = this.usageDeltas.get(keyId) ?? { tokens: 0, cost: 0 };
-                cur.tokens += d.tokens;
-                cur.cost += d.cost;
-                this.usageDeltas.set(keyId, cur);
+        await this.mutateUsage(async () => {
+            const stored = await this.ctx.storage.get<
+                [string, { tokens: number; cost: number }][]
+            >("usageDeltas");
+            if (!stored || stored.length === 0) return;
+            await this.ctx.storage.delete("usageDeltas");
+            try {
+                const stmts = stored.map(([keyId, d]) =>
+                    this.env.DB.prepare(
+                        `UPDATE api_keys
+                         SET usage_tokens = usage_tokens + ?,
+                             usage_cost = usage_cost + ?
+                         WHERE id = ?`
+                    ).bind(d.tokens, d.cost, keyId)
+                );
+                await this.env.DB.batch(stmts);
+            } catch (err) {
+                // Re-queue on failure so usage isn't silently dropped; the
+                // next alarm will retry.
+                await this.ctx.storage.put("usageDeltas", stored);
+                console.error("usage flush failed, re-queued", err);
             }
-            console.error("usage flush failed, re-queued", err);
-        }
+        });
     }
 
     async alarm(): Promise<void> {
@@ -210,7 +220,8 @@ export class RouterState {
         // Keep the alarm recurring while there's work; a fresh POST /usage
         // re-arms it. This avoids an eternal alarm on an idle DO.
         this.usageAlarmScheduled = false;
-        if (this.usageDeltas.size > 0) {
+        const pending = await this.ctx.storage.get("usageDeltas");
+        if (pending) {
             this.scheduleUsageFlush();
         }
     }
@@ -312,21 +323,29 @@ export class RouterState {
             }
             if (request.method === "POST" && url.pathname === "/usage") {
                 // Batched virtual-key usage accounting. The worker POSTs one
-                // delta per completed request (fire-and-forget); deltas
-                // accumulate in memory and flush to D1 on the ~30s alarm.
-                // This replaces the old per-request `UPDATE api_keys`, which
-                // was a serialized D1 write on the hot path.
+                // delta per completed request (fire-and-forget); deltas merge
+                // into DO storage and flush to D1 on the ~30s alarm. This
+                // replaces the old per-request `UPDATE api_keys`, which was a
+                // serialized D1 write on the hot path.
                 const body = (await request.json()) as {
                     keyId?: string;
                     tokens?: number;
                     cost?: number;
                 };
                 if (typeof body.keyId === "string" && body.keyId) {
-                    const cur = this.usageDeltas.get(body.keyId) ?? { tokens: 0, cost: 0 };
-                    cur.tokens += typeof body.tokens === "number" ? body.tokens : 0;
-                    cur.cost += typeof body.cost === "number" ? body.cost : 0;
-                    this.usageDeltas.set(body.keyId, cur);
-                    this.scheduleUsageFlush();
+                    await this.mutateUsage(async () => {
+                        const stored =
+                            (await this.ctx.storage.get<
+                                [string, { tokens: number; cost: number }][]
+                            >("usageDeltas")) ?? [];
+                        const map = new Map(stored);
+                        const cur = map.get(body.keyId as string) ?? { tokens: 0, cost: 0 };
+                        cur.tokens += typeof body.tokens === "number" ? body.tokens : 0;
+                        cur.cost += typeof body.cost === "number" ? body.cost : 0;
+                        map.set(body.keyId as string, cur);
+                        await this.ctx.storage.put("usageDeltas", [...map.entries()]);
+                        this.scheduleUsageFlush();
+                    });
                 }
                 return json({ ok: true });
             }
