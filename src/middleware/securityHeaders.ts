@@ -16,13 +16,13 @@
 
 import type { Context, Next } from "hono";
 
-const BASELINE_HEADERS: Record<string, string> = {
+export const BASELINE_HEADERS: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin"
 };
 
-const DASHBOARD_CSP = [
+export const DASHBOARD_CSP = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",

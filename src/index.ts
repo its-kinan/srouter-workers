@@ -30,7 +30,7 @@ import type { AppHonoEnv } from "./hono-env.js";
 import { createCorsMiddleware, parseAllowedOrigins } from "./middleware/cors.js";
 import { createBodyLimitMiddleware } from "./middleware/bodyLimit.js";
 import { createCsrfOriginGuard } from "./middleware/csrf.js";
-import { securityHeaders } from "./middleware/securityHeaders.js";
+import { securityHeaders, DASHBOARD_CSP, BASELINE_HEADERS } from "./middleware/securityHeaders.js";
 import { chatRoutes } from "./routes/chat.js";
 import { messagesRoutes } from "./routes/v1/messages.js";
 import { modelsRoutes } from "./routes/models.js";
@@ -147,7 +147,11 @@ app.notFound((c) => {
         status: 200,
         headers: {
             "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache"
+            "Cache-Control": "no-cache",
+            // The global securityHeaders middleware does not run for
+            // notFound responses, so set the headers here directly.
+            ...BASELINE_HEADERS,
+            "Content-Security-Policy": DASHBOARD_CSP
         }
     });
 });
