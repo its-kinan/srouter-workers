@@ -14,7 +14,7 @@
   "scripts": {
     "db:migrate": "wrangler d1 migrations apply srouter-db",
     "deploy": "wrangler deploy",
-    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/test/phase1.test.js .test-build/test/dashboard.test.js .test-build/test/quota-fetchers.test.js .test-build/test/fallback.test.js .test-build/test/stealth.test.js .test-build/test/account-pin.test.js .test-build/test/perf-caches.test.js .test-build/test/logging-usage.test.js .test-build/test/latency-routing.test.js .test-build/test/attempt-cap.test.js .test-build/test/routing-improvements.test.js .test-build/test/security-hardening.test.js .test-build/test/login-rate-limit-do.test.js",
+    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/test/phase1.test.js .test-build/test/dashboard.test.js .test-build/test/quota-fetchers.test.js .test-build/test/fallback.test.js .test-build/test/stealth.test.js .test-build/test/account-pin.test.js .test-build/test/perf-caches.test.js .test-build/test/logging-usage.test.js .test-build/test/latency-routing.test.js .test-build/test/attempt-cap.test.js .test-build/test/routing-improvements.test.js .test-build/test/security-hardening.test.js .test-build/test/login-rate-limit-do.test.js .test-build/test/subrequest-budget.test.js",
     "typecheck": "tsc --noEmit",
     "predeploy": "node scripts/inline-dashboard.mjs",
     "pretest": "node scripts/inline-dashboard.mjs"

@@ -67,6 +67,25 @@ export interface Env {
      * requests. Each hedged attempt counts against SROUTER_MAX_ATTEMPTS.
      */
     SROUTER_HEDGE_DELAY_MS?: string;
+    /**
+     * Per-attempt first-byte deadline in ms. If an upstream attempt produces
+     * no first response byte within this deadline it is abandoned and counts
+     * as a failed attempt (feeds the circuit breaker). Bounds worst-case
+     * wall time when an upstream hangs instead of failing. Default 15000.
+     * Missing/non-numeric values fall back to the default; <= 0 disables.
+     * The effective deadline is at least SROUTER_HEDGE_DELAY_MS + 1000ms so
+     * hedging always gets a chance to fire.
+     */
+    SROUTER_ATTEMPT_TIMEOUT_MS?: string;
+    /**
+     * Shared subrequest (fetch) budget per request. Cloudflare kills a
+     * Worker invocation at ~50 subrequests; each failover attempt costs
+     * >=1 fetch (up to 3 via fetchWithRetry retries, x2 when hedged), so
+     * the loop stops with a subrequest_budget_reached note instead of
+     * letting Cloudflare kill the invocation with a bare 502. Default 40.
+     * Missing, non-numeric, or <= 0 values fall back to the default.
+     */
+    SROUTER_SUBREQUEST_BUDGET?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */
     BRAVE_API_KEY?: string;
     TAVILY_API_KEY?: string;

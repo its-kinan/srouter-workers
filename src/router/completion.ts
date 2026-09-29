@@ -35,6 +35,10 @@ import {
 } from "../providers/registry.js";
 import { switchShardName, latencyPairKey } from "./durable.js";
 import { getModelCatalog } from "./catalog.js";
+import {
+    CreateRequestAttemptBudget,
+    type RequestAttemptBudget
+} from "../vendor/types/attemptBudget.js";
 import type { DecryptedAccount } from "../providers/types.js";
 import type {
     ChatCompletionChunk,
@@ -140,6 +144,39 @@ export function resolveHedgeDelayMs(env: Env): number {
     const parsed = parseInt(String(raw), 10);
     if (!Number.isFinite(parsed)) return DEFAULT_HEDGE_DELAY_MS;
     return Math.max(0, parsed);
+}
+
+/** Default per-attempt first-byte deadline (ms). */
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 15000;
+
+/**
+ * Per-attempt first-byte timeout, from SROUTER_ATTEMPT_TIMEOUT_MS. If an
+ * attempt produces no first response byte within this deadline it is
+ * abandoned and counts as a failed attempt (feeds the circuit breaker).
+ * Missing/non-numeric values fall back to DEFAULT_ATTEMPT_TIMEOUT_MS;
+ * <= 0 disables the timeout. Exported for unit tests.
+ */
+export function resolveAttemptTimeoutMs(env: Env): number {
+    const raw = env.SROUTER_ATTEMPT_TIMEOUT_MS;
+    if (raw === undefined || raw === null || raw === "") return DEFAULT_ATTEMPT_TIMEOUT_MS;
+    const parsed = parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_ATTEMPT_TIMEOUT_MS;
+    return Math.max(0, parsed);
+}
+
+/**
+ * Shared subrequest (fetch) budget per request. Cloudflare kills a Worker
+ * invocation at ~50 subrequests; the default 40 leaves headroom for the
+ * framework's own fetches (DO/D1 don't count, but be conservative).
+ * Missing, non-numeric, or <= 0 values fall back to the default.
+ * Exported for unit tests.
+ */
+export const DEFAULT_SUBREQUEST_BUDGET = 40;
+
+export function resolveSubrequestBudget(env: Env): number {
+    const raw = env.SROUTER_SUBREQUEST_BUDGET;
+    const parsed = raw === undefined || raw === null ? NaN : parseInt(String(raw), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SUBREQUEST_BUDGET;
 }
 
 function routerShard(env: Env, providerType: string): DurableObjectStub {
@@ -598,6 +635,29 @@ function emptyStreamError(): Error {
 }
 
 /**
+ * Abandon an attempt's generator WITHOUT awaiting gen.return().
+ *
+ * Awaiting return() is unsafe here: if the generator is suspended at a
+ * never-settling await (hung upstream — exactly the case the attempt
+ * timeout guards), V8 queues the return behind the pending await and the
+ * returned promise never resolves, hanging the request. Fire-and-forget
+ * is safe: the generator is dead to us either way; if its await later
+ * settles, the queued return completes it cleanly instead of resuming
+ * work nobody wants. This also fixes the hedge-win path, where awaiting
+ * the loser's return() would hang a request whose winner already
+ * produced first byte, if the loser never settles.
+ */
+function abandon(gen: AsyncGenerator<ChatCompletionChunk, void, void>): void {
+    try {
+        void gen.return(undefined).catch(() => {
+            // Abandoned mid-flight; nothing to clean up.
+        });
+    } catch {
+        // Synchronous throw from return(); nothing to clean up.
+    }
+}
+
+/**
  * Race a primary attempt's first byte, optionally hedging. Exported for
  * unit tests (test/routing-improvements.test.ts).
  *
@@ -607,11 +667,19 @@ function emptyStreamError(): Error {
  *                   pending after hedgeDelayMs. Returning null (startup
  *                   failure) falls back to awaiting the primary alone.
  * @param hedgeDelayMs <= 0 disables hedging.
+ * @param attemptTimeoutMs overall first-byte deadline for this attempt
+ *                   (primary start already done by the caller). When it
+ *                   fires, every started side is abandoned fire-and-forget
+ *                   (see abandon()) and the attempt fails with a timeout
+ *                   error — this is what bounds worst-case wall time when
+ *                   an upstream hangs instead of failing. <= 0 disables
+ *                   the timeout.
  */
 export async function hedgedFirstByte(
     primary: StartedAttempt,
     startHedge: (() => Promise<StartedAttempt | null>) | null,
-    hedgeDelayMs: number
+    hedgeDelayMs: number,
+    attemptTimeoutMs = 0
 ): Promise<HedgedFirstByteOutcome> {
     const fail = (
         failures: { account: DecryptedAccount; error: unknown }[],
@@ -636,69 +704,119 @@ export async function hedgedFirstByte(
         error: r.ok ? emptyStreamError() : r.error
     });
 
-    const primaryP = firstByte(primary.gen);
-    const settlePrimaryAlone = async (): Promise<HedgedFirstByteOutcome> => {
-        const r = await primaryP;
-        if (!r.ok || r.first.done) return fail([toFailure(primary.account, r)], 1);
-        return win(primary, r.first, 1);
-    };
-    if (!startHedge || hedgeDelayMs <= 0) return settlePrimaryAlone();
+    // Every attempt started so far (primary + hedge once fired). The
+    // timeout handler abandons all of these; `timedOut` stops run() from
+    // firing a hedge after the deadline already passed (the timeout
+    // callback and the hedge-start continuation can't interleave
+    // mid-microtask, so the flag check is race-free).
+    const started: StartedAttempt[] = [primary];
+    let timedOut = false;
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutP = new Promise<"timeout">((res) => {
-        timer = setTimeout(() => res("timeout"), hedgeDelayMs);
-    });
-    const raced = await Promise.race([
-        primaryP.then(() => "primary" as const),
-        timeoutP
-    ]);
-    if (raced === "primary") {
-        if (timer !== undefined) clearTimeout(timer);
-        return settlePrimaryAlone();
-    }
-    // Hedge delay elapsed with no first byte: fire the hedge.
-    const hedge = await startHedge().catch(() => null);
-    if (!hedge) {
-        if (timer !== undefined) clearTimeout(timer);
-        return settlePrimaryAlone(); // hedge never started: 1 account consumed
-    }
-    const hedgeP = firstByte(hedge.gen);
-    const w = await Promise.race([
-        primaryP.then((r) => ({ r, side: "primary" as const })),
-        hedgeP.then((r) => ({ r, side: "hedge" as const }))
-    ]);
-    if (timer !== undefined) clearTimeout(timer);
-    const winner = w.side === "primary" ? primary : hedge;
-    const loser = w.side === "primary" ? hedge : primary;
-    const wr = w.r;
-    if (wr.ok && !wr.first.done) {
-        // Winner committed: abandon the loser. Its in-flight count ends
-        // here; it is NOT reported as a failure (it was merely slow).
-        try {
-            await loser.gen.return(undefined);
-        } catch {
-            // Abandoned mid-flight; nothing to clean up.
+    const run = async (): Promise<HedgedFirstByteOutcome> => {
+        const primaryP = firstByte(primary.gen);
+        const settlePrimaryAlone = async (): Promise<HedgedFirstByteOutcome> => {
+            const r = await primaryP;
+            if (!r.ok || r.first.done)
+                return fail([toFailure(primary.account, r)], started.length);
+            return win(primary, r.first, started.length);
+        };
+        if (!startHedge || hedgeDelayMs <= 0) return settlePrimaryAlone();
+
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutP = new Promise<"timeout">((res) => {
+            timer = setTimeout(() => res("timeout"), hedgeDelayMs);
+        });
+        const raced = await Promise.race([
+            primaryP.then(() => "primary" as const),
+            timeoutP
+        ]);
+        if (timedOut || raced === "primary") {
+            if (timer !== undefined) clearTimeout(timer);
+            return settlePrimaryAlone();
         }
-        trackAttemptEnd(loser.account.id);
-        return win(winner, wr.first, 2);
-    }
-    // Race winner failed (error or empty): the other side may still succeed.
-    const otherP = w.side === "primary" ? hedgeP : primaryP;
-    const other = w.side === "primary" ? hedge : primary;
-    const ro = await otherP;
-    if (ro.ok && !ro.first.done) {
-        try {
-            await winner.gen.return(undefined);
-        } catch {
-            // Already failed/empty; nothing to clean up.
+        // Hedge delay elapsed with no first byte: fire the hedge.
+        const hedge = await startHedge().catch(() => null);
+        if (timedOut || !hedge) {
+            if (timer !== undefined) clearTimeout(timer);
+            return settlePrimaryAlone(); // hedge never started: primary alone
         }
+        started.push(hedge);
+        const hedgeP = firstByte(hedge.gen);
+        const w = await Promise.race([
+            primaryP.then((r) => ({ r, side: "primary" as const })),
+            hedgeP.then((r) => ({ r, side: "hedge" as const }))
+        ]);
+        if (timer !== undefined) clearTimeout(timer);
+        const winner = w.side === "primary" ? primary : hedge;
+        const loser = w.side === "primary" ? hedge : primary;
+        const wr = w.r;
+        if (wr.ok && !wr.first.done) {
+            // Winner committed: abandon the loser. Its in-flight count ends
+            // here; it is NOT reported as a failure (it was merely slow).
+            // An abandoned generator is dead — it can never retry, so the
+            // hedge/retry interaction needs no extra policy: retries live
+            // inside fetchWithRetry and are bounded by the shared
+            // subrequest budget (see executeCompletion). Abandonment is
+            // fire-and-forget (see abandon()): awaiting the loser's
+            // return() would hang the request if the loser never settles.
+            abandon(loser.gen);
+            trackAttemptEnd(loser.account.id);
+            return win(winner, wr.first, started.length);
+        }
+        // Race winner failed (error or empty): the other side may still succeed.
+        const otherP = w.side === "primary" ? hedgeP : primaryP;
+        const other = w.side === "primary" ? hedge : primary;
+        const ro = await otherP;
+        if (ro.ok && !ro.first.done) {
+            // The failed side's generator already settled (error/empty),
+            // so abandoning it cannot hang; still fire-and-forget for
+            // uniformity.
+            abandon(winner.gen);
+            trackAttemptEnd(winner.account.id);
+            return win(other, ro.first, started.length);
+        }
+        // Both sides failed: failover bookkeeping for both.
         trackAttemptEnd(winner.account.id);
-        return win(other, ro.first, 2);
+        trackAttemptEnd(other.account.id);
+        return fail(
+            [toFailure(winner.account, w.r), toFailure(other.account, ro)],
+            started.length
+        );
+    };
+
+    if (!(attemptTimeoutMs > 0)) return run();
+
+    // Overall first-byte deadline. On timeout both sides are abandoned;
+    // the caller reports each as a failed attempt (circuit breaker +
+    // cooldown), exactly like any other attempt failure. run() keeps
+    // settling in the background, but its outcome is discarded and its
+    // trackAttemptEnd calls are idempotent (delete-on-zero), so the
+    // double-accounting is harmless.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        const outcome = await Promise.race([
+            run(),
+            new Promise<"attempt-timed-out">((resolve) => {
+                timer = setTimeout(() => resolve("attempt-timed-out"), attemptTimeoutMs);
+            })
+        ]);
+        if (outcome !== "attempt-timed-out") return outcome;
+        timedOut = true;
+        const err = new Error(
+            `attempt timed out waiting for first byte after ${attemptTimeoutMs}ms`
+        );
+        // Fire-and-forget abandonment (see abandon()): awaiting return()
+        // on a hung generator would hang here instead of failing fast.
+        // The caller reports each started side as a failed attempt, which
+        // also ends its in-flight count via failoverOne.
+        for (const s of started) abandon(s.gen);
+        return fail(
+            started.map((s) => ({ account: s.account, error: err })),
+            started.length
+        );
+    } finally {
+        if (timer !== undefined) clearTimeout(timer);
     }
-    // Both sides failed: failover bookkeeping for both.
-    trackAttemptEnd(winner.account.id);
-    trackAttemptEnd(other.account.id);
-    return fail([toFailure(winner.account, w.r), toFailure(other.account, ro)], 2);
 }
 
 export async function executeCompletion(
@@ -930,6 +1048,37 @@ export async function executeCompletion(
     let attemptedAccounts = 0;
     let totalCandidateAccounts = 0;
 
+    // Shared subrequest budget for this request. Cloudflare kills the
+    // invocation at ~50 subrequests (fetch calls); the attempt cap above
+    // counts *attempts*, but each attempt costs >= 1 fetch (up to 3 via
+    // fetchWithRetry retries, x2 when hedged) — 10 attempts x 3 retries x
+    // 2 hedged = 60 fetches, which is exactly how the 2026-09-29 production
+    // 502 happened ("Too many subrequests by single Worker invocation").
+    // The budget is passed to every attempt's executor; fetchWithRetry
+    // consumes from it before each fetch and returns 503 *without fetching*
+    // once exhausted. The failover loop also checks it before each attempt
+    // and stops with a subrequest_budget_reached note instead of letting
+    // Cloudflare kill us with a bare 502.
+    //
+    // Worst-case math per request (defaults: budget 40, attempts 10,
+    // attempt timeout 15s, hedge delay 2s):
+    //   fetches: hard-bounded by the budget — fetchWithRetry checks before
+    //     every fetch, so actual fetches <= 40 < 50 always. The loop gate
+    //     below stops new attempts at 0 remaining.
+    //   attempts: min(SROUTER_MAX_ATTEMPTS, budget) in practice; the loop
+    //     breaks on budget exhaustion, so a dead-account storm ends after
+    //     ~40 fetches instead of burning the whole candidate list.
+    //   wall time: attempts run sequentially, each with a first-byte
+    //     deadline of SROUTER_ATTEMPT_TIMEOUT_MS (15s). Theoretical worst
+    //     10 x 15s = 150s, but every timed-out attempt burned >= 1 fetch
+    //     and the common dead-account case (401/503/refused) fails in ms
+    //     — the timeout only binds truly-hung upstreams, which previously
+    //     hung the request with no bound at all.
+    const subrequestBudget: RequestAttemptBudget = CreateRequestAttemptBudget(
+        resolveSubrequestBudget(env)
+    );
+    let subrequestBudgetHit = false;
+
     for await (const attempt of runCandidateAttempts(env.DB, body.model, tracker)) {
         const { currentModel, isFallbackAttempt } = attempt;
         const candidateResolved = await resolveModel(currentModel, accounts, catalog);
@@ -959,8 +1108,12 @@ export async function executeCompletion(
         const maxAttempts = resolveMaxAttempts(env);
         const attemptAccounts = candidateOrdered.slice(0, maxAttempts);
         totalCandidateAccounts += candidateOrdered.length;
-        attemptedAccounts += attemptAccounts.length;
-        if (candidateOrdered.length > maxAttempts) attemptCapHit = true;
+        // attemptedAccounts counts accounts actually attempted (incremented
+        // per outcome below — NOT the sliced pool size, which over-counts
+        // when the subrequest budget stops the loop early). attemptCapHit
+        // is set after the loop, only if the cap — not the budget — was the
+        // binding constraint.
+        const capTruncated = candidateOrdered.length > maxAttempts;
 
         // Delayed hedging: race the fastest candidate's first byte against
         // SROUTER_HEDGE_DELAY_MS (default 2000ms); on timeout, fire the
@@ -968,10 +1121,20 @@ export async function executeCompletion(
         // requests never hedge — parseAccountPin guarantees a pin restricts
         // candidates, and a single-candidate pool has nothing to hedge
         // against. Each fired hedge consumes one SROUTER_MAX_ATTEMPTS slot
-        // (the slice above already bounds the pool, so the cap holds).
+        // (the slice above already bounds the pool, so the cap holds) and
+        // fetches through the shared subrequest budget (a hedge is skipped
+        // when the budget is exhausted — it would 503 immediately anyway).
         const hedgeDelayMs = resolveHedgeDelayMs(env);
         const { pin: requestPin } = parseAccountPin(body.model);
         const hedgingOn = !requestPin && hedgeDelayMs > 0;
+
+        // Per-attempt first-byte deadline (SROUTER_ATTEMPT_TIMEOUT_MS,
+        // default 15000ms). Must leave room for the hedge to fire, so it
+        // is clamped up to hedgeDelayMs + 1000ms — otherwise hedging would
+        // be silently dead under an aggressive timeout.
+        const attemptTimeoutMs = resolveAttemptTimeoutMs(env);
+        const effectiveAttemptTimeoutMs =
+            attemptTimeoutMs > 0 ? Math.max(attemptTimeoutMs, hedgeDelayMs + 1000) : 0;
 
         const startStreamAttempt = async (acct: DecryptedAccount): Promise<StartedAttempt> => {
             // Lazy token refresh (SRouter parity): ensure OAuth tokens are fresh
@@ -999,7 +1162,15 @@ export async function executeCompletion(
             }
             const adapter = buildAdapter(acct);
             trackAttemptStart(acct.id);
-            const gen = adapter.chatCompletionStream(candidateUpstreamReq(acct.id));
+            // The shared subrequest budget bounds total fetches for this
+            // request (retries included): fetchWithRetry consumes from it
+            // and stops fetching at zero. Pinned single-account attempts
+            // get their full try here — the budget starts full per request,
+            // so the loop gate below can never block the first attempt.
+            const gen = adapter.chatCompletionStream(
+                candidateUpstreamReq(acct.id),
+                subrequestBudget
+            );
             // Time-to-first-chunk for latency-aware routing (EMA per pair).
             return { account: acct, gen, attemptStart: Date.now() };
         };
@@ -1015,15 +1186,28 @@ export async function executeCompletion(
         };
 
         for (let idx = 0; idx < attemptAccounts.length;) {
+            // Subrequest-budget gate: stop BEFORE Cloudflare's ~50-fetch
+            // kill. Without this, attempts whose fetches all 503 (budget
+            // exhausted inside fetchWithRetry) would still cycle through
+            // the remaining candidate list pointlessly.
+            if (subrequestBudget.remaining <= 0) {
+                subrequestBudgetHit = true;
+                break;
+            }
             const account = attemptAccounts[idx]!;
             const primary = await startStreamAttempt(account);
             const hedgeAccount =
                 hedgingOn && idx + 1 < attemptAccounts.length ? attemptAccounts[idx + 1]! : null;
             const outcome = await hedgedFirstByte(
                 primary,
-                hedgeAccount ? () => startStreamAttempt(hedgeAccount).catch(() => null) : null,
-                hedgeDelayMs
+                hedgeAccount && subrequestBudget.remaining > 0
+                    ? () => startStreamAttempt(hedgeAccount).catch(() => null)
+                    : null,
+                hedgeDelayMs,
+                effectiveAttemptTimeoutMs
             );
+            // Count accounts actually attempted (primary + hedge if fired).
+            attemptedAccounts += outcome.accountsConsumed;
             if (outcome.kind === "failed") {
                 for (const f of outcome.failures) failoverOne(f.account, f.error);
                 idx += outcome.accountsConsumed;
@@ -1242,6 +1426,13 @@ export async function executeCompletion(
                 accountId: account.id
             };
         }
+
+        // The attempt cap was the binding constraint only if it truncated
+        // the pool AND the subrequest budget didn't stop us first (reaching
+        // here without a budget break means the sliced list was exhausted).
+        if (capTruncated && !subrequestBudgetHit) attemptCapHit = true;
+        // No subrequests left: fallback model candidates can't fetch either.
+        if (subrequestBudgetHit) break;
     }
 
     // Terminal failure: all candidates/accounts exhausted (or model unknown).
@@ -1255,7 +1446,11 @@ export async function executeCompletion(
         attemptCapHit && lastStatus === 502
             ? ` [attempt_cap_reached: attempted ${attemptedAccounts} of ${totalCandidateAccounts} candidate accounts]`
             : "";
-    const finalErrorMsg = lastErrorMsg + capNote;
+    const budgetNote =
+        subrequestBudgetHit && lastStatus === 502
+            ? ` [subrequest_budget_reached: used ${subrequestBudget.used}/${subrequestBudget.limit} subrequests]`
+            : "";
+    const finalErrorMsg = lastErrorMsg + capNote + budgetNote;
     logTerminalError(lastStatus, finalErrorMsg, tracker, body.model);
 
     return {
