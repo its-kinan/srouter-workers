@@ -6,6 +6,10 @@ export interface Env {
     R2: R2Bucket;
     /** Durable Object holding router state (round-robin, circuit breaker). */
     SWITCH_STATE: DurableObjectNamespace;
+    /** Durable Object holding global login brute-force counters (one instance).
+        Optional so older test envs and partial deployments fall back to
+        per-isolate counting instead of crashing. */
+    LOGIN_LIMIT?: DurableObjectNamespace;
     /** Static assets binding. Unused in Phase 1 (dashboard shell is inlined
         into the bundle via scripts/inline-dashboard.mjs); reserved for the
         full React dashboard in Phase 2. */

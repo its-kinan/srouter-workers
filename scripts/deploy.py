@@ -10,8 +10,10 @@ Steps:
 Auth: uses the stored custom.cloudflare credential via dynamic_credentials.
 Run: python3 scripts/deploy.py
 First deploy of a new worker: INCLUDE_DO_MIGRATION=1 python3 scripts/deploy.py
-  (applies the SwitchState DO migration once; never re-send on updates —
+  (applies the latest DO migration once; never re-send on updates —
   re-sending an applied migration tag fails with 10074).
+  Migration history: v1 = SwitchState (applied); v2 = LoginRateLimit.
+  The flag now sends ONLY the v2 tag, so it is safe to run once to apply v2.
 """
 import base64
 import hashlib
@@ -32,9 +34,10 @@ ESBUILD = "npx"  # esbuild via npx (0.28.2)
 D1_ID = "0c496b54-cd98-4b6c-8f37-d7d1c27dc4f2"
 R2_BUCKET = "switch-data"
 HOSTS = ["api.cloudflare.com"]
-# Set INCLUDE_DO_MIGRATION=1 in the environment only for the very first
-# deploy of this worker (registers the SwitchState DO class). Re-sending an
-# applied migration tag fails with 10074, so this must stay off afterwards.
+# Set INCLUDE_DO_MIGRATION=1 in the environment only when a NEW DO migration
+# tag needs applying (currently v2 = LoginRateLimit; v1 = SwitchState is
+# already applied). It sends only the v2 tag — never re-send an applied tag,
+# which fails with 10074.
 INCLUDE_DO_MIGRATION = os.environ.get("INCLUDE_DO_MIGRATION") == "1"
 
 
@@ -157,14 +160,17 @@ def main():
             {"type": "r2_bucket", "name": "R2", "bucket_name": R2_BUCKET},
             {"type": "durable_object_namespace", "name": "SWITCH_STATE",
              "class_name": "SwitchState"},
+            {"type": "durable_object_namespace", "name": "LOGIN_LIMIT",
+             "class_name": "LoginRateLimit"},
             {"type": "assets", "name": "ASSETS"},
             {"type": "plain_text", "name": "ENVIRONMENT", "text": "production"},
         ],
-        # DO migration: only on the first deploy (INCLUDE_DO_MIGRATION=1).
-        # Re-sending an applied tag fails with 10074.
+        # DO migration: only when INCLUDE_DO_MIGRATION=1, and only the v2 tag
+        # (LoginRateLimit). v1 (SwitchState) is already applied; re-sending an
+        # applied tag fails with 10074.
         **({"migrations": {
-            "tag": "v1",
-            "new_sqlite_classes": ["SwitchState"],
+            "tag": "v2",
+            "new_sqlite_classes": ["LoginRateLimit"],
             "new_classes": [], "renamed_classes": [], "deleted_classes": [],
         }} if INCLUDE_DO_MIGRATION else {}),
         "assets": {"jwt": completion_jwt, "config": asset_config},

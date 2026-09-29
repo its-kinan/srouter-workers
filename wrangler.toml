@@ -29,9 +29,19 @@ bucket_name = "switch-data"
 name = "SWITCH_STATE"
 class_name = "SwitchState"
 
+[[durable_objects.bindings]]
+name = "LOGIN_LIMIT"
+class_name = "LoginRateLimit"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SwitchState"]
+
+# v2 adds the LoginRateLimit DO (global login brute-force counters).
+# Never re-send v1 (already applied); deploy.py sends v2 alone on request.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["LoginRateLimit"]
 
 # --- Cron: OAuth token sweeper (replaces SRouter's in-process setInterval) ---
 [triggers]
