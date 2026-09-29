@@ -9,7 +9,7 @@
 import { Hono, type Context } from "hono";
 import type { AppHonoEnv } from "../../hono-env.js";
 import { apiKeyAuth } from "../../middleware/apiKeyAuth.js";
-import { loadAccounts } from "../../providers/registry.js";
+import { loadAccountMetas, decryptAccountSecrets } from "../../providers/registry.js";
 import {
     fetchLiveQuota,
     isLiveQuotaSupported,
@@ -33,14 +33,25 @@ async function buildQuota(env: AppHonoEnv["Bindings"]): Promise<{ object: "quota
     const providers: ProviderQuotaAccount[] = [];
 
     // Live quota for supported OAuth providers (concurrent, failures skipped).
+    // Secrets decrypt lazily — only the handful of live-quota accounts, not
+    // every row.
     const liveRows = (rows.results ?? []).filter((r) => isLiveQuotaSupported(r.provider_id));
     if (masterKey && liveRows.length > 0) {
-        const accounts = await loadAccounts(db, masterKey);
-        const byId = new Map(accounts.map((a) => [a.id, a]));
+        const metas = await loadAccountMetas(db, {
+            providerTypes: [...new Set(liveRows.map((r) => r.provider_id))]
+        });
+        const byId = new Map(metas.map((m) => [m.id, m]));
         const settled = await Promise.allSettled(
             liveRows.map(async (row) => {
-                const account = byId.get(row.id);
-                const accessToken = account?.accessToken || account?.apiKey;
+                const meta = byId.get(row.id);
+                if (!meta) return null;
+                let accessToken: string | undefined;
+                try {
+                    const account = await decryptAccountSecrets(meta, masterKey);
+                    accessToken = account.accessToken || account.apiKey;
+                } catch {
+                    return null;
+                }
                 if (!accessToken) return null;
                 const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 20000));
                 return await Promise.race([
@@ -49,7 +60,7 @@ async function buildQuota(env: AppHonoEnv["Bindings"]): Promise<{ object: "quota
                         providerId: row.provider_id,
                         name: row.name,
                         accessToken,
-                        accountId: account?.accountId,
+                        accountId: meta.accountId,
                         enabled: row.enabled === 1
                     }),
                     timeout

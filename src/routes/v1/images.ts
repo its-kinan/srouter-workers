@@ -21,9 +21,12 @@ import {
     accountMatchesPin,
     buildAdapter,
     candidateAccountsForPrefix,
-    loadAccounts,
+    decryptAccountSecrets,
+    loadAccountMetas,
     parseAccountPin,
-    stripRoutingPrefix
+    stripRoutingPrefix,
+    supportsImageGeneration,
+    type AccountMeta
 } from "../../providers/registry.js";
 import type { DecryptedAccount } from "../../providers/types.js";
 import type {
@@ -118,7 +121,8 @@ imagesRoutes.post("/generations", apiKeyAuth, rateLimit, async (c) => {
         );
     }
 
-    const accounts = await loadAccounts(env.DB, env.MASTER_KEY);
+    // Plaintext metadata only — secrets decrypt lazily per attempted account.
+    const accounts = await loadAccountMetas(env.DB);
     if (accounts.length === 0) {
         return c.json(
             {
@@ -140,7 +144,7 @@ imagesRoutes.post("/generations", apiKeyAuth, rateLimit, async (c) => {
     };
 
     const logImage = (
-        account: DecryptedAccount,
+        account: AccountMeta,
         currentModel: string,
         statusCode: number
     ): void => {
@@ -188,21 +192,22 @@ imagesRoutes.post("/generations", apiKeyAuth, rateLimit, async (c) => {
 
     // Resolve accounts capable of image generation for a model id.
     // Supports account pinning ("provider/model#selector"): the pin restricts
-    // candidates and never leaks upstream.
-    const accountsForModel = (modelId: string): { account: DecryptedAccount; upstreamModel: string }[] => {
+    // candidates and never leaks upstream. Capability is a static provider
+    // check — no adapter build (and no secret decrypt) needed to filter.
+    const accountsForModel = (modelId: string): { account: AccountMeta; upstreamModel: string }[] => {
         const { model: cleanModel, pin } = parseAccountPin(modelId);
         const prefixed = candidateAccountsForPrefix(cleanModel, accounts, pin);
         if (prefixed.length > 0) {
             return prefixed
                 .map((a) => ({ account: a, upstreamModel: stripRoutingPrefix(cleanModel, a) }))
-                .filter(({ account }) => buildAdapter(account).generateImage !== undefined);
+                .filter(({ account }) => supportsImageGeneration(account));
         }
         if (pin && candidateAccountsForPrefix(cleanModel, accounts).length > 0) return [];
-        // Bare model id: any account whose adapter supports generateImage.
-        const out: { account: DecryptedAccount; upstreamModel: string }[] = [];
+        // Bare model id: any account whose provider type supports generateImage.
+        const out: { account: AccountMeta; upstreamModel: string }[] = [];
         for (const a of accounts) {
             if (pin && !accountMatchesPin(a, pin)) continue;
-            if (buildAdapter(a).generateImage !== undefined) {
+            if (supportsImageGeneration(a)) {
                 out.push({ account: a, upstreamModel: cleanModel });
             }
         }
@@ -228,7 +233,16 @@ imagesRoutes.post("/generations", apiKeyAuth, rateLimit, async (c) => {
         }
 
         for (const { account, upstreamModel } of candidates) {
-            const adapter = buildAdapter(account);
+            // Secrets decrypt lazily here — one account per attempt, not all
+            // rows up front.
+            let fullAccount: DecryptedAccount;
+            try {
+                fullAccount = await decryptAccountSecrets(account, env.MASTER_KEY);
+            } catch {
+                console.error(`Skipping account ${account.id}: failed to decrypt secrets`);
+                continue;
+            }
+            const adapter = buildAdapter(fullAccount);
             if (!adapter.generateImage) continue;
             const req: ImageGenerationRequest = {
                 ...(body as ImageGenerationRequest),

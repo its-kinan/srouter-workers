@@ -27,11 +27,13 @@ import {
     accountMatchesPin,
     buildAdapter,
     candidateAccountsForPrefix,
-    loadAccounts,
+    decryptAccountSecrets,
+    loadAccountMetas,
     parseAccountPin,
     providerAlias,
     providerTypeForPrefix,
-    stripRoutingPrefix
+    stripRoutingPrefix,
+    type AccountMeta
 } from "../providers/registry.js";
 import { switchShardName, latencyPairKey } from "./durable.js";
 import { getModelCatalog } from "./catalog.js";
@@ -312,7 +314,7 @@ function inflightOf(accountId: string): number {
 }
 
 /** Effective latency for ordering: pair EMA → account EMA → undefined. */
-function effectiveLatency(a: DecryptedAccount, model: string | undefined): number | undefined {
+function effectiveLatency(a: AccountMeta, model: string | undefined): number | undefined {
     const pair =
         model !== undefined ? localLatencyEmaPair.get(latencyPairKey(a.id, model)) : undefined;
     const base = pair ?? localLatencyEmaAccount.get(a.id);
@@ -329,11 +331,11 @@ function effectiveLatency(a: DecryptedAccount, model: string | undefined): numbe
  * data yet (cold isolate) — identical behavior to before.
  */
 export function orderCandidatesLocally(
-    candidates: DecryptedAccount[],
+    candidates: AccountMeta[],
     model?: string
-): DecryptedAccount[] {
+): AccountMeta[] {
     const now = Date.now();
-    const healthy: DecryptedAccount[] = [];
+    const healthy: AccountMeta[] = [];
     for (const a of candidates) {
         const until = localCooldownUntil.get(a.id);
         if (until !== undefined) {
@@ -398,7 +400,7 @@ export function resetLocalRoutingStateForTests(): void {
 export function reportLater(
     ctx: { waitUntil(p: Promise<unknown>): void },
     env: Env,
-    account: DecryptedAccount,
+    account: AccountMeta,
     ok: boolean,
     error?: string,
     latencyMs?: number,
@@ -480,37 +482,37 @@ export function reportQualityLater(
 
 /**
  * Load only the provider types this request (including its fallback targets)
- * can touch. Prefixed models ("th/foo") decrypt ~dozens of rows instead of
+ * can touch. Prefixed models ("th/foo") read ~dozens of rows instead of
  * all ~342; bare models and unknown prefixes fall back to the full load.
+ * Returns plaintext metadata — secrets are decrypted lazily per attempt.
  */
 async function loadAccountsForModel(
     db: D1Database,
-    masterKeyB64: string,
     model: string
-): Promise<DecryptedAccount[]> {
+): Promise<AccountMeta[]> {
     const candidates = await resolveCandidates(db, model);
     const types = new Set<string>();
     for (const c of candidates) {
         const { model: clean } = parseAccountPin(c.model);
         const slash = clean.indexOf("/");
-        if (slash <= 0) return loadAccounts(db, masterKeyB64);
+        if (slash <= 0) return loadAccountMetas(db);
         const pt = providerTypeForPrefix(clean.slice(0, slash));
-        if (!pt) return loadAccounts(db, masterKeyB64);
+        if (!pt) return loadAccountMetas(db);
         types.add(pt);
     }
-    if (types.size === 0) return loadAccounts(db, masterKeyB64);
-    return loadAccounts(db, masterKeyB64, { providerTypes: [...types] });
+    if (types.size === 0) return loadAccountMetas(db);
+    return loadAccountMetas(db, { providerTypes: [...types] });
 }
 
 interface ResolvedModel {
-    candidates: DecryptedAccount[];
+    candidates: AccountMeta[];
     /** Model id to send upstream for each candidate id. */
     upstreamByAccount: Map<string, string>;
 }
 
 async function resolveModel(
     model: string,
-    accounts: DecryptedAccount[],
+    accounts: AccountMeta[],
     catalog: ModelObject[] | null
 ): Promise<ResolvedModel | null> {
     // Account pinning: "provider/model#selector" restricts routing to the
@@ -548,7 +550,7 @@ async function resolveModel(
         if (bare.toLowerCase() === wanted) matched.add(m.id);
     }
     if (matched.size === 0) return null;
-    const candidates: DecryptedAccount[] = [];
+    const candidates: AccountMeta[] = [];
     const upstreamByAccount = new Map<string, string>();
     for (const a of accounts) {
         if (pin && !accountMatchesPin(a, pin)) continue;
@@ -828,11 +830,13 @@ export async function executeCompletion(
 
     // Decrypt only the providers this request (and its fallback targets)
     // can touch — the isolate cache makes repeat requests ~free.
-    // The account load (D1 + decrypt) and the catalog fetch (DO) are
+    // The account load (D1 + metadata parse) and the catalog fetch (DO) are
     // independent — run them concurrently so a cold isolate pays max(), not
-    // sum(), of the two. resolveModel below needs both.
+    // sum(), of the two. resolveModel below needs both. Secrets are NOT
+    // decrypted here: each attempted account decrypts lazily in
+    // startStreamAttempt (~0.1ms vs ~50ms for all rows on cold start).
     const [accounts, catalog] = await Promise.all([
-        loadAccountsForModel(env.DB, env.MASTER_KEY, body.model),
+        loadAccountsForModel(env.DB, body.model),
         getModelCatalog(env, executionCtx)
     ]);
     if (accounts.length === 0) {
@@ -1136,7 +1140,14 @@ export async function executeCompletion(
         const effectiveAttemptTimeoutMs =
             attemptTimeoutMs > 0 ? Math.max(attemptTimeoutMs, hedgeDelayMs + 1000) : 0;
 
-        const startStreamAttempt = async (acct: DecryptedAccount): Promise<StartedAttempt> => {
+        const startStreamAttempt = async (meta: AccountMeta): Promise<StartedAttempt> => {
+            // Lazy secret decrypt: the request path works with plaintext
+            // metadata until the moment an account is actually attempted.
+            // One AES-GCM decrypt (~0.1ms) instead of decrypting every row
+            // on cold start (~50ms) — the fix for 1102s on the 10ms budget.
+            // A corrupt envelope fails just this attempt; the loop skips to
+            // the next candidate like the old load-time filter did.
+            const acct = await decryptAccountSecrets(meta, env.MASTER_KEY);
             // Lazy token refresh (SRouter parity): ensure OAuth tokens are fresh
             // before routing. If refresh fails, continue with the current token;
             // the upstream 401 will trigger failover to the next account.
@@ -1175,7 +1186,7 @@ export async function executeCompletion(
             return { account: acct, gen, attemptStart: Date.now() };
         };
 
-        const failoverOne = (acct: DecryptedAccount, err: unknown): void => {
+        const failoverOne = (acct: AccountMeta, err: unknown): void => {
             const msg = err instanceof Error ? err.message : String(err);
             reportLater(executionCtx, env, acct, false, msg, undefined, currentModel);
             trackAttemptEnd(acct.id);
@@ -1195,7 +1206,20 @@ export async function executeCompletion(
                 break;
             }
             const account = attemptAccounts[idx]!;
-            const primary = await startStreamAttempt(account);
+            let primary: StartedAttempt;
+            try {
+                primary = await startStreamAttempt(account);
+            } catch (err) {
+                // Secrets failed to decrypt (corrupt envelope): skip this
+                // account and fail over, mirroring the old load-time filter.
+                console.error(
+                    `Skipping account ${account.id}: failed to decrypt secrets`
+                );
+                failoverOne(account, err);
+                attemptedAccounts += 1;
+                idx += 1;
+                continue;
+            }
             const hedgeAccount =
                 hedgingOn && idx + 1 < attemptAccounts.length ? attemptAccounts[idx + 1]! : null;
             const outcome = await hedgedFirstByte(

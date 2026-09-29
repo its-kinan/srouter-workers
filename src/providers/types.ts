@@ -40,6 +40,12 @@ export interface DecryptedAccount {
     tokenExpiresAt?: number | null;
     /** Last refresh timestamp (ms) for OAuth accounts, null if never. */
     lastRefreshedAt?: number | null;
+    /**
+     * The encrypted secrets envelope this was decrypted from. Carried so a
+     * DecryptedAccount stays structurally assignable to AccountMeta
+     * (selection helpers accept either).
+     */
+    secretsEnc?: string | null;
 }
 
 /** Narrower than AIProvider: what the router actually calls. */

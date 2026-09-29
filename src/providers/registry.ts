@@ -65,6 +65,72 @@ export interface ProviderRow {
     enabled: number;
 }
 
+/**
+ * Plaintext account metadata — everything routing needs EXCEPT secrets.
+ * Loading this is cheap (D1 reads + JSON.parse, no AES-GCM), so the hot
+ * request path works with metas and decrypts secrets lazily, per attempted
+ * account, via decryptAccountSecrets().
+ *
+ * All non-identifier fields are optional so a DecryptedAccount remains
+ * structurally assignable (selection helpers accept either).
+ */
+export interface AccountMeta {
+    id: string;
+    providerType: string;
+    name: string;
+    alias?: string;
+    category: "oauth" | "api_key";
+    protocol: string;
+    baseUrl?: string;
+    accountId?: string;
+    organizationId?: string;
+    customHeaders?: Record<string, string>;
+    /** Parsed plaintext provider_specific_data (secrets.extra merges at decrypt). */
+    publicExtra?: Record<string, unknown>;
+    enabled: boolean;
+    tokenExpiresAt?: number | null;
+    lastRefreshedAt?: number | null;
+    /** Encrypted secrets envelope — decrypted lazily per attempt. */
+    secretsEnc?: string | null;
+}
+
+/** Build plaintext metadata from a row — no decryption, minimal CPU. */
+export function metaForRow(row: ProviderRow): AccountMeta {
+    let publicExtra: Record<string, unknown> | undefined;
+    if (row.provider_specific_data) {
+        try {
+            publicExtra = JSON.parse(row.provider_specific_data) as Record<string, unknown>;
+        } catch {
+            publicExtra = undefined;
+        }
+    }
+    let customHeaders: Record<string, string> | undefined;
+    if (row.custom_headers) {
+        try {
+            customHeaders = JSON.parse(row.custom_headers) as Record<string, string>;
+        } catch {
+            customHeaders = undefined;
+        }
+    }
+    return {
+        id: row.id,
+        providerType: row.provider_id,
+        name: row.name,
+        alias: row.alias ?? undefined,
+        category: row.category === "oauth" ? "oauth" : "api_key",
+        protocol: row.protocol,
+        baseUrl: row.base_url ?? undefined,
+        accountId: row.account_id ?? undefined,
+        organizationId: row.organization_id ?? undefined,
+        customHeaders,
+        publicExtra,
+        enabled: row.enabled === 1,
+        tokenExpiresAt: row.token_expires_at,
+        lastRefreshedAt: row.last_refreshed_at,
+        secretsEnc: row.secrets_enc
+    };
+}
+
 interface StoredSecrets {
     api_key?: string;
     access_token?: string;
@@ -230,62 +296,67 @@ export async function decryptAccount(
     row: ProviderRow,
     masterKeyB64: string
 ): Promise<DecryptedAccount> {
+    return decryptMeta(metaForRow(row), masterKeyB64);
+}
+
+/**
+ * Decrypt an AccountMeta's secrets into a full DecryptedAccount.
+ * Plaintext fields come from the meta; secrets.extra merges under the
+ * plaintext provider_specific_data (same precedence as decryptAccount).
+ * Throws on a corrupt/missing envelope — callers that must tolerate bad
+ * rows (catalog) catch per-account.
+ */
+export async function decryptMeta(
+    meta: AccountMeta,
+    masterKeyB64: string
+): Promise<DecryptedAccount> {
     let secrets: StoredSecrets = {};
-    if (row.secrets_enc) {
-        secrets = await decryptSecretsObject<StoredSecrets>(row.secrets_enc, masterKeyB64);
+    if (meta.secretsEnc) {
+        secrets = await decryptSecretsObject<StoredSecrets>(meta.secretsEnc, masterKeyB64);
     }
-    let extra: Record<string, unknown> = secrets.extra ?? {};
-    if (row.provider_specific_data) {
-        try {
-            extra = { ...extra, ...JSON.parse(row.provider_specific_data) };
-        } catch {
-            // keep decrypted extra
-        }
-    }
-    let customHeaders: Record<string, string> | undefined;
-    if (row.custom_headers) {
-        try {
-            customHeaders = JSON.parse(row.custom_headers);
-        } catch {
-            customHeaders = undefined;
-        }
-    }
+    const extra: Record<string, unknown> = {
+        ...secrets.extra,
+        ...(meta.publicExtra ?? {})
+    };
     return {
-        id: row.id,
-        providerType: row.provider_id,
-        name: row.name,
-        alias: row.alias ?? undefined,
-        category: row.category === "oauth" ? "oauth" : "api_key",
-        protocol: row.protocol,
-        baseUrl: row.base_url ?? undefined,
+        id: meta.id,
+        providerType: meta.providerType,
+        name: meta.name,
+        alias: meta.alias,
+        category: meta.category,
+        protocol: meta.protocol,
+        baseUrl: meta.baseUrl,
         apiKey: secrets.api_key,
         accessToken: secrets.access_token,
         refreshToken: secrets.refresh_token,
-        accountId: row.account_id ?? undefined,
-        organizationId: row.organization_id ?? undefined,
+        accountId: meta.accountId,
+        organizationId: meta.organizationId,
         extra,
-        customHeaders,
-        enabled: row.enabled === 1,
-        tokenExpiresAt: row.token_expires_at,
-        lastRefreshedAt: row.last_refreshed_at
+        customHeaders: meta.customHeaders,
+        enabled: meta.enabled,
+        tokenExpiresAt: meta.tokenExpiresAt,
+        lastRefreshedAt: meta.lastRefreshedAt,
+        secretsEnc: meta.secretsEnc
     };
 }
 
-/** Load all enabled accounts from D1 and decrypt them. */
+/** Load account metadata (no secrets) — the hot-path loader. */
 export interface LoadAccountsOptions {
     /**
-     * Only load/decrypt these provider types (e.g. ["tokenharbor"] for a
+     * Only load these provider types (e.g. ["tokenharbor"] for a
      * "th/<model>" request). Skips the other ~340 rows entirely.
      */
     providerTypes?: string[];
 }
 
-// --- Isolate-local decrypted-account cache ---
-// loadAccounts() used to decrypt every enabled row on EVERY request. With
-// ~342 accounts that was ~50ms+ of pure AES-GCM CPU per request on top of
-// the DO round-trips — the main driver of Cloudflare 1102s under load.
-// Now decrypted accounts are cached per isolate and the providers table is
-// version-checked with one cheap aggregation query per request.
+// --- Isolate-local account-metadata cache ---
+// The request path used to decrypt every enabled row on EVERY cold request.
+// With ~342 accounts that was ~50ms+ of pure AES-GCM CPU — the main driver
+// of Cloudflare 1102s ("Worker exceeded resource limits", surfaced as 503)
+// on the Free plan's 10ms CPU budget. Now only plaintext metadata is loaded
+// and cached per isolate; secrets are decrypted lazily per attempted
+// account via decryptAccountSecrets() — typically 1 decrypt (~0.1ms)
+// instead of ~342 (~50ms).
 //
 // Version tuple covers everything routing-relevant: row add/delete
 // (COUNT/MAX(created_at)), enable/disable (SUM(enabled)). OAuth token
@@ -296,25 +367,47 @@ export interface LoadAccountsOptions {
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 
 interface AccountCacheEntry {
-    accounts: DecryptedAccount[];
+    metas: AccountMeta[];
     version: string;
     loadedAt: number;
+    /**
+     * Memoized fully-decrypted array for loadAccounts(). Same cache-hit
+     * contract as before: repeat calls within the TTL return the same
+     * array instance. Keyed on master key so tests with distinct keys
+     * can't cross-contaminate.
+     */
+    decryptedByKey?: { masterKey: string; accounts: DecryptedAccount[] };
+}
+
+function metaCacheKey(opts: LoadAccountsOptions): string {
+    const types = opts.providerTypes?.length ? [...opts.providerTypes].sort() : [];
+    return types.join(",");
 }
 
 /** Cache key "" = full load; otherwise sorted provider list. */
-const accountCaches = new Map<string, AccountCacheEntry>();
-const accountCacheInflight = new Map<string, Promise<DecryptedAccount[]>>();
+const metaCaches = new Map<string, AccountCacheEntry>();
+const metaCacheInflight = new Map<string, Promise<AccountMeta[]>>();
 
 /** Lightweight hit/miss counters for cache observability (exposed via /health). */
 export const accountCacheStats = { hits: 0, misses: 0 };
+
+/**
+ * Per-account decrypted-secrets cache. A request that fails over across N
+ * accounts decrypts each once; the 60s TTL matches the metadata cache so a
+ * providers-table change (which bumps the version and reloads metas) also
+ * drops any secrets decrypted from the old rows.
+ */
+const SECRET_CACHE_TTL_MS = 60_000;
+const secretCache = new Map<string, { account: DecryptedAccount; cachedAt: number }>();
 
 /**
  * Drop all isolate-local registry caches (tests only). Production isolates
  * never call this — the TTLs handle freshness.
  */
 export function resetRegistryCachesForTests(): void {
-    accountCaches.clear();
-    accountCacheInflight.clear();
+    metaCaches.clear();
+    metaCacheInflight.clear();
+    secretCache.clear();
     cachedVersion = null;
 }
 
@@ -343,49 +436,130 @@ async function providersVersion(db: D1Database): Promise<string> {
     return version;
 }
 
-async function readAndDecryptAll(
+async function readMetas(
     db: D1Database,
-    masterKeyB64: string
-): Promise<DecryptedAccount[]> {
-    const res = await db
-        .prepare("SELECT * FROM providers WHERE enabled = 1")
-        .all<ProviderRow>();
-    return decryptRows(res.results ?? [], masterKeyB64);
+    providerTypes: string[]
+): Promise<AccountMeta[]> {
+    let res;
+    if (providerTypes.length > 0) {
+        const placeholders = providerTypes.map(() => "?").join(",");
+        res = await db
+            .prepare(
+                `SELECT * FROM providers WHERE enabled = 1 AND provider_id IN (${placeholders})`
+            )
+            .bind(...providerTypes)
+            .all<ProviderRow>();
+    } else {
+        res = await db.prepare("SELECT * FROM providers WHERE enabled = 1").all<ProviderRow>();
+    }
+    return (res.results ?? []).map(metaForRow);
 }
 
-async function readAndDecryptSelective(
+/**
+ * Load plaintext account metadata for the hot request path. No AES-GCM —
+ * a cold isolate pays two D1 round-trips (version + rows) and JSON.parse,
+ * ~1-3ms of CPU instead of ~50ms of decryption.
+ */
+export async function loadAccountMetas(
+    db: D1Database,
+    opts: LoadAccountsOptions = {}
+): Promise<AccountMeta[]> {
+    const key = metaCacheKey(opts);
+    const now = Date.now();
+
+    const cached = metaCaches.get(key);
+    if (cached && now - cached.loadedAt < ACCOUNT_CACHE_TTL_MS) {
+        // One cheap aggregation decides freshness; on match the D1 row
+        // read is skipped entirely.
+        // B3: the version check itself is throttled (~5s) below, so a warm
+        // isolate does ~zero D1 reads here, not one.
+        if ((await providersVersion(db)) === cached.version) {
+            cached.loadedAt = now; // extend the TTL while the table is quiet
+            accountCacheStats.hits++;
+            return cached.metas;
+        }
+    }
+    accountCacheStats.misses++;
+
+    // Single-flight the reload so a cold isolate under burst doesn't
+    // read the table N times concurrently.
+    let inflight = metaCacheInflight.get(key);
+    if (!inflight) {
+        inflight = (async () => {
+            const version = await providersVersion(db);
+            const metas = await readMetas(db, key.length > 0 ? key.split(",") : []);
+            metaCaches.set(key, { metas, version, loadedAt: Date.now() });
+            // Metas reloaded from new rows — drop secrets decrypted from
+            // the old ones so a changed/disabled account can't linger.
+            secretCache.clear();
+            return metas;
+        })();
+        metaCacheInflight.set(key, inflight);
+        inflight.then(
+            () => {
+                if (metaCacheInflight.get(key) === inflight) {
+                    metaCacheInflight.delete(key);
+                }
+            },
+            () => {
+                if (metaCacheInflight.get(key) === inflight) {
+                    metaCacheInflight.delete(key);
+                }
+            }
+        );
+    }
+    return inflight;
+}
+
+/**
+ * Decrypt one account's secrets, lazily, at attempt time. Results are
+ * cached per isolate (60s) so failover across N accounts decrypts each
+ * once. Throws on a corrupt/missing envelope — the request path treats
+ * that as a per-account failure and moves to the next candidate.
+ */
+export async function decryptAccountSecrets(
+    meta: AccountMeta,
+    masterKeyB64: string
+): Promise<DecryptedAccount> {
+    const now = Date.now();
+    const cached = secretCache.get(meta.id);
+    if (cached && now - cached.cachedAt < SECRET_CACHE_TTL_MS) {
+        return cached.account;
+    }
+    const account = await decryptMeta(meta, masterKeyB64);
+    secretCache.set(meta.id, { account, cachedAt: now });
+    return account;
+}
+
+/**
+ * Load all enabled accounts WITH secrets decrypted (catalog rebuild,
+ * admin views). Preserves the old chunked parallel decrypt: 24-way
+ * concurrency cuts wall-clock time without spiking isolate memory, and a
+ * corrupt envelope skips just that account instead of failing the load.
+ * Prefer loadAccountMetas() + decryptAccountSecrets() on the request path.
+ */
+export async function loadAccounts(
     db: D1Database,
     masterKeyB64: string,
-    providerTypes: string[]
+    opts: LoadAccountsOptions = {}
 ): Promise<DecryptedAccount[]> {
-    const placeholders = providerTypes.map(() => "?").join(",");
-    const res = await db
-        .prepare(
-            `SELECT * FROM providers WHERE enabled = 1 AND provider_id IN (${placeholders})`
-        )
-        .bind(...providerTypes)
-        .all<ProviderRow>();
-    return decryptRows(res.results ?? [], masterKeyB64);
-}
-
-async function decryptRows(
-    rows: ProviderRow[],
-    masterKeyB64: string
-): Promise<DecryptedAccount[]> {
-    // Chunked parallel decrypt: the old sequential await decrypted ~342 rows
-    // one-by-one on cold start. 24-way concurrency cuts wall-clock time
-    // without spiking isolate memory with 342 concurrent subtle ops.
+    const metas = await loadAccountMetas(db, opts);
+    // Cache-hit contract: repeat loads within the TTL return the same
+    // array instance (perf-caches.test.ts pins this).
+    const entry = metaCaches.get(metaCacheKey(opts));
+    const memo = entry?.decryptedByKey;
+    if (memo && memo.masterKey === masterKeyB64) return memo.accounts;
     const CONCURRENCY = 24;
     const accounts: DecryptedAccount[] = [];
-    for (let i = 0; i < rows.length; i += CONCURRENCY) {
-        const chunk = rows.slice(i, i + CONCURRENCY);
+    for (let i = 0; i < metas.length; i += CONCURRENCY) {
+        const chunk = metas.slice(i, i + CONCURRENCY);
         const decrypted = await Promise.all(
-            chunk.map(async (row): Promise<DecryptedAccount | null> => {
+            chunk.map(async (meta): Promise<DecryptedAccount | null> => {
                 try {
-                    return await decryptAccount(row, masterKeyB64);
+                    return await decryptAccountSecrets(meta, masterKeyB64);
                 } catch {
                     // A corrupt envelope must not take down routing for healthy accounts.
-                    console.error(`Skipping account ${row.id}: failed to decrypt secrets`);
+                    console.error(`Skipping account ${meta.id}: failed to decrypt secrets`);
                     return null;
                 }
             })
@@ -394,60 +568,8 @@ async function decryptRows(
             if (account) accounts.push(account);
         }
     }
+    if (entry) entry.decryptedByKey = { masterKey: masterKeyB64, accounts };
     return accounts;
-}
-
-export async function loadAccounts(
-    db: D1Database,
-    masterKeyB64: string,
-    opts: LoadAccountsOptions = {}
-): Promise<DecryptedAccount[]> {
-    const types = opts.providerTypes?.length ? [...opts.providerTypes].sort() : [];
-    const key = types.join(",");
-    const now = Date.now();
-
-    const cached = accountCaches.get(key);
-    if (cached && now - cached.loadedAt < ACCOUNT_CACHE_TTL_MS) {
-        // One cheap aggregation decides freshness; on match the 342
-        // decryptions are skipped entirely.
-        // B3: the version check itself is throttled (~5s) below, so a warm
-        // isolate does ~zero D1 reads here, not one.
-        if ((await providersVersion(db)) === cached.version) {
-            cached.loadedAt = now; // extend the TTL while the table is quiet
-            accountCacheStats.hits++;
-            return cached.accounts;
-        }
-    }
-    accountCacheStats.misses++;
-
-    // Single-flight the reload so a cold isolate under burst doesn't
-    // decrypt the table N times concurrently.
-    let inflight = accountCacheInflight.get(key);
-    if (!inflight) {
-        inflight = (async () => {
-            const version = await providersVersion(db);
-            const accounts =
-                types.length > 0
-                    ? await readAndDecryptSelective(db, masterKeyB64, types)
-                    : await readAndDecryptAll(db, masterKeyB64);
-            accountCaches.set(key, { accounts, version, loadedAt: Date.now() });
-            return accounts;
-        })();
-        accountCacheInflight.set(key, inflight);
-        inflight.then(
-            () => {
-                if (accountCacheInflight.get(key) === inflight) {
-                    accountCacheInflight.delete(key);
-                }
-            },
-            () => {
-                if (accountCacheInflight.get(key) === inflight) {
-                    accountCacheInflight.delete(key);
-                }
-            }
-        );
-    }
-    return inflight;
 }
 
 /**
@@ -470,6 +592,15 @@ export function providerTypeForPrefix(prefix: string): string | undefined {
 export interface RoutedAccount {
     account: DecryptedAccount;
     adapter: ProviderAdapter;
+}
+
+/**
+ * Static image-generation capability check — no secrets needed. Only the
+ * OpenAI-compatible executor implements generateImage; checking the
+ * provider type avoids building (and decrypting for) every adapter.
+ */
+export function supportsImageGeneration(meta: AccountMeta): boolean {
+    return meta.providerType === "openai-compatible";
 }
 
 export function buildAdapter(
@@ -499,7 +630,7 @@ export function parseAccountPin(model: string): { model: string; pin: string | n
  * name and alias match case-insensitively (names are not unique, so all
  * name matches are kept by the caller).
  */
-export function accountMatchesPin(account: DecryptedAccount, pin: string): boolean {
+export function accountMatchesPin(account: AccountMeta, pin: string): boolean {
     if (account.id === pin) return true;
     const needle = pin.toLowerCase();
     if (account.name && account.name.toLowerCase() === needle) return true;
@@ -518,9 +649,9 @@ export function accountMatchesPin(account: DecryptedAccount, pin: string): boole
  */
 export function candidateAccountsForPrefix(
     model: string,
-    accounts: DecryptedAccount[],
+    accounts: AccountMeta[],
     pin?: string | null
-): DecryptedAccount[] {
+): AccountMeta[] {
     const slash = model.indexOf("/");
     if (slash < 0) return [];
     const prefix = model.slice(0, slash).toLowerCase();
@@ -537,7 +668,7 @@ export function candidateAccountsForPrefix(
  * The account-pin "#selector" suffix is stripped as well — it must never
  * leak upstream.
  */
-export function stripRoutingPrefix(model: string, account: DecryptedAccount): string {
+export function stripRoutingPrefix(model: string, account: AccountMeta): string {
     const cleanModel = parseAccountPin(model).model;
     const prefixes = routingPrefixes(
         account.providerType,
