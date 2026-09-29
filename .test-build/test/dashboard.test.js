@@ -315,7 +315,15 @@ describe("models aggregation hardening (/v1/models)", () => {
         doModels = null;
         const routerStub = {
             fetch: async (req) => {
+                const url = new URL(req.url);
                 if (req.method === "POST") {
+                    // Honor the /refresh/try contract ({ acquired }) used by
+                    // the catalog single-flight; other POSTs store models.
+                    if (url.pathname === "/refresh/try") {
+                        return new Response(JSON.stringify({ acquired: true }), {
+                            headers: { "Content-Type": "application/json" }
+                        });
+                    }
                     doModels = (await req.json()).models;
                     return new Response(JSON.stringify({ ok: true }));
                 }

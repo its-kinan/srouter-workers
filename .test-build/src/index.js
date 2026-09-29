@@ -46,6 +46,7 @@ import { databaseRoutes } from "./routes/v1/database.js";
 import { RouterState } from "./router/durable.js";
 import { decryptAccount } from "./providers/registry.js";
 import { refreshOAuthTokens } from "./providers/oauth-refresh.js";
+import { refreshCatalogIfStale } from "./router/catalog.js";
 import { DASHBOARD_HTML } from "./dashboard-html.js";
 import { encryptSecretsObject } from "./crypto/secretbox.js";
 const app = new Hono();
@@ -173,6 +174,16 @@ async function scheduled(env) {
             .bind(secretsEnc, Date.now() + expiresInMs, Date.now(), row.id)
             .run();
     }));
+    // Model catalog: rebuild when stale (single-flighted via the DO
+    // refresh-lock). This keeps request-time bare-model resolution off the
+    // upstream fan-out path — requests serve the catalog
+    // stale-while-revalidate and never rebuild inline.
+    try {
+        await refreshCatalogIfStale(env);
+    }
+    catch (err) {
+        console.error("[cron] model catalog refresh failed:", err);
+    }
 }
 export default {
     fetch: app.fetch,

@@ -23,15 +23,37 @@ function b64decode(b64: string): Uint8Array<ArrayBuffer> {
     return out;
 }
 
+/**
+ * Module-level import cache: importing a CryptoKey costs a base64 decode +
+ * a subtle.importKey call, and the master key never changes at runtime.
+ * Previously every decryptSecretsObject() call re-imported the key — with
+ * ~342 accounts decrypted per request, that alone was a large share of the
+ * per-request CPU that caused Cloudflare 1102s under load.
+ */
+const masterKeyCache = new Map<string, Promise<CryptoKey>>();
+
 async function importMasterKey(masterKeyB64: string): Promise<CryptoKey> {
-    const raw = b64decode(masterKeyB64);
-    if (raw.length !== 32) {
-        throw new Error("MASTER_KEY must be 32 bytes, base64-encoded");
-    }
-    return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, [
-        "encrypt",
-        "decrypt"
-    ]);
+    const cached = masterKeyCache.get(masterKeyB64);
+    if (cached) return cached;
+    const pending = (async (): Promise<CryptoKey> => {
+        const raw = b64decode(masterKeyB64);
+        if (raw.length !== 32) {
+            throw new Error("MASTER_KEY must be 32 bytes, base64-encoded");
+        }
+        return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, [
+            "encrypt",
+            "decrypt"
+        ]);
+    })();
+    masterKeyCache.set(masterKeyB64, pending);
+    // Don't poison the cache: if the import rejects, drop it so a later
+    // call retries instead of serving the same rejection forever.
+    pending.catch(() => {
+        if (masterKeyCache.get(masterKeyB64) === pending) {
+            masterKeyCache.delete(masterKeyB64);
+        }
+    });
+    return pending;
 }
 
 /** Encrypt a UTF-8 string; returns the JSON envelope string for DB storage. */

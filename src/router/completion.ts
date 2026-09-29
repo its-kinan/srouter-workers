@@ -27,12 +27,14 @@ import {
     accountMatchesPin,
     buildAdapter,
     candidateAccountsForPrefix,
-    listAllModels,
     loadAccounts,
     parseAccountPin,
     providerAlias,
+    providerTypeForPrefix,
     stripRoutingPrefix
 } from "../providers/registry.js";
+import { routerShardName } from "./durable.js";
+import { getModelCatalog } from "./catalog.js";
 import type { DecryptedAccount } from "../providers/types.js";
 import type {
     ChatCompletionChunk,
@@ -47,6 +49,7 @@ import { calculateCostFromTokens, getPricingForModel } from "../vendor/pricing.j
 import { estimateTokens } from "./tokens.js";
 import {
     runCandidateAttempts,
+    resolveCandidates,
     type AttemptTracker
 } from "../routing/fallback.js";
 import {
@@ -94,52 +97,96 @@ export type CompletionOutcome =
           accountId: string;
       };
 
-function routerStub(env: Env): DurableObjectStub {
-    return env.ROUTER_STATE.getByName("router");
+function routerShard(env: Env, providerType: string): DurableObjectStub {
+    return env.ROUTER_STATE.getByName(routerShardName(providerType));
 }
 
-async function report(
+// --- Isolate-local routing state ---
+// /route and /report used to be awaited inline on the request path, funneling
+// every request through the single RouterState DO instance. Under load that
+// DO became the choke point (each call = JSON round-trip + full-state
+// storage.put). Now:
+//   - candidate ordering is computed locally: isolate-local round-robin per
+//     provider plus a short cooldown for just-failed accounts;
+//   - circuit reports are fire-and-forget via waitUntil to the provider's DO
+//     shard, which stays the source of truth for the admin health view.
+// Failover semantics are unchanged: the attempt loop still tries the next
+// account as soon as one fails, before any byte is sent to the client.
+
+const localRoundRobin = new Map<string, number>();
+const localCooldownUntil = new Map<string, number>();
+const LOCAL_COOLDOWN_MS = 30_000;
+
+/** Order candidates without touching the DO: skip cooling accounts, round-robin the rest. */
+function orderCandidatesLocally(candidates: DecryptedAccount[]): DecryptedAccount[] {
+    const now = Date.now();
+    const healthy: DecryptedAccount[] = [];
+    for (const a of candidates) {
+        const until = localCooldownUntil.get(a.id);
+        if (until !== undefined) {
+            if (until <= now) localCooldownUntil.delete(a.id);
+            else continue;
+        }
+        healthy.push(a);
+    }
+    // If everything is cooling, try them anyway (best effort beats 503).
+    const pool = healthy.length > 0 ? healthy : candidates;
+    if (pool.length <= 1) return pool;
+    const base = pool[0]!.providerType;
+    const idx = (localRoundRobin.get(base) ?? 0) % pool.length;
+    localRoundRobin.set(base, idx + 1);
+    return [...pool.slice(idx), ...pool.slice(0, idx)];
+}
+
+/** Fire-and-forget circuit report to the provider's DO shard. Never blocks. */
+function reportLater(
+    ctx: { waitUntil(p: Promise<unknown>): void },
     env: Env,
-    accountId: string,
+    account: DecryptedAccount,
     ok: boolean,
     error?: string
-): Promise<void> {
-    try {
-        await routerStub(env).fetch(
-            new Request("https://do/report", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ accountId, ok, error })
-            })
-        );
-    } catch {
-        // Router-state reporting must never fail the request itself.
-    }
+): void {
+    if (ok) localCooldownUntil.delete(account.id);
+    else localCooldownUntil.set(account.id, Date.now() + LOCAL_COOLDOWN_MS);
+    ctx.waitUntil(
+        (async () => {
+            try {
+                await routerShard(env, account.providerType).fetch(
+                    new Request("https://do/report", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ accountId: account.id, ok, error })
+                    })
+                );
+            } catch {
+                // Router-state reporting must never fail the request itself.
+            }
+        })()
+    );
 }
 
-async function orderedCandidates(
-    env: Env,
-    accounts: DecryptedAccount[]
+/**
+ * Load only the provider types this request (including its fallback targets)
+ * can touch. Prefixed models ("th/foo") decrypt ~dozens of rows instead of
+ * all ~342; bare models and unknown prefixes fall back to the full load.
+ */
+async function loadAccountsForModel(
+    db: D1Database,
+    masterKeyB64: string,
+    model: string
 ): Promise<DecryptedAccount[]> {
-    const refs = accounts.map((a) => ({ id: a.id, base: a.providerType }));
-    try {
-        const res = await routerStub(env).fetch(
-            new Request("https://do/route", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ accounts: refs })
-            })
-        );
-        const data = (await res.json()) as { orderedIds: string[] };
-        const byId = new Map(accounts.map((a) => [a.id, a]));
-        const ordered = (data.orderedIds ?? [])
-            .map((id) => byId.get(id))
-            .filter((a): a is DecryptedAccount => !!a);
-        for (const a of accounts) if (!ordered.includes(a)) ordered.push(a);
-        return ordered;
-    } catch {
-        return accounts;
+    const candidates = await resolveCandidates(db, model);
+    const types = new Set<string>();
+    for (const c of candidates) {
+        const { model: clean } = parseAccountPin(c.model);
+        const slash = clean.indexOf("/");
+        if (slash <= 0) return loadAccounts(db, masterKeyB64);
+        const pt = providerTypeForPrefix(clean.slice(0, slash));
+        if (!pt) return loadAccounts(db, masterKeyB64);
+        types.add(pt);
     }
+    if (types.size === 0) return loadAccounts(db, masterKeyB64);
+    return loadAccounts(db, masterKeyB64, { providerTypes: [...types] });
 }
 
 interface ResolvedModel {
@@ -149,9 +196,9 @@ interface ResolvedModel {
 }
 
 async function resolveModel(
-    env: Env,
     model: string,
-    accounts: DecryptedAccount[]
+    accounts: DecryptedAccount[],
+    catalog: ModelObject[] | null
 ): Promise<ResolvedModel | null> {
     // Account pinning: "provider/model#selector" restricts routing to the
     // pinned account(s) only. stripRoutingPrefix removes the pin, so the
@@ -173,29 +220,10 @@ async function resolveModel(
         const prefixMatched = candidateAccountsForPrefix(cleanModel, accounts);
         if (prefixMatched.length > 0) return null;
     }
-    // Bare model id: look it up in the aggregated catalog.
-    let catalog: ModelObject[] | null = null;
-    try {
-        const res = await routerStub(env).fetch(new Request("https://do/models"));
-        catalog = ((await res.json()) as { models: ModelObject[] | null }).models;
-    } catch {
-        catalog = null;
-    }
-    if (!catalog || catalog.length === 0) {
-        catalog = await listAllModels(accounts);
-        // Never cache an empty aggregation — see getMergedModels.
-        // An empty catalog matches nothing, so resolve to null (unknown model).
-        if (catalog.length === 0) return null;
-        routerStub(env)
-            .fetch(
-                new Request("https://do/models", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ models: catalog })
-                })
-            )
-            .catch(() => {});
-    }
+    // Bare model id: look it up in the aggregated catalog (served
+    // stale-while-revalidate; the request path never fans out to upstreams).
+    // A null catalog means cold start with no data — unknown model.
+    if (!catalog || catalog.length === 0) return null;
     const wanted = cleanModel.toLowerCase();
     const matched = new Set<string>();
     for (const m of catalog ?? []) {
@@ -246,7 +274,9 @@ export async function executeCompletion(
 ): Promise<CompletionOutcome> {
     const { body, apiKeyRow, startedAt, ip, userAgent } = input;
 
-    const accounts = await loadAccounts(env.DB, env.MASTER_KEY);
+    // Decrypt only the providers this request (and its fallback targets)
+    // can touch — the isolate cache makes repeat requests ~free.
+    const accounts = await loadAccountsForModel(env.DB, env.MASTER_KEY, body.model);
     if (accounts.length === 0) {
         return {
             kind: "error",
@@ -256,6 +286,10 @@ export async function executeCompletion(
             code: "no_providers"
         };
     }
+
+    // Aggregated model catalog for bare-model resolution, served
+    // stale-while-revalidate (fetched once per request, never inline fan-out).
+    const catalog = await getModelCatalog(env, executionCtx);
 
     const logAttempt = (
         candidateResolved: ResolvedModel,
@@ -342,7 +376,7 @@ export async function executeCompletion(
 
     for await (const attempt of runCandidateAttempts(env.DB, body.model, tracker)) {
         const { currentModel, isFallbackAttempt } = attempt;
-        const candidateResolved = await resolveModel(env, currentModel, accounts);
+        const candidateResolved = await resolveModel(currentModel, accounts, catalog);
         if (!candidateResolved) {
             const msg = `Model "${currentModel}" not found.`;
             tracker.lastError = new Error(msg);
@@ -352,7 +386,7 @@ export async function executeCompletion(
             continue;
         }
 
-        const candidateOrdered = await orderedCandidates(env, candidateResolved.candidates);
+        const candidateOrdered = orderCandidatesLocally(candidateResolved.candidates);
         const candidateUpstreamReq = (accountId: string): ChatCompletionRequest =>
             ({
                 ...(body as unknown as Record<string, unknown>),
@@ -393,7 +427,7 @@ export async function executeCompletion(
                 first = await gen.next();
             } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                await report(env, account.id, false, msg);
+                reportLater(executionCtx, env, account, false, msg);
                 tracker.lastError = err instanceof Error ? err : msg;
                 if (!tracker.fallbackReason) tracker.fallbackReason = msg;
                 lastErrorMsg = msg;
@@ -401,7 +435,7 @@ export async function executeCompletion(
                 continue; // failover: nothing was sent to the client yet
             }
             if (first.done) {
-                await report(env, account.id, false, "empty response stream");
+                reportLater(executionCtx, env, account, false, "empty response stream");
                 tracker.lastError = new Error("empty response stream");
                 if (!tracker.fallbackReason) tracker.fallbackReason = "empty response stream";
                 lastErrorMsg = "empty response stream";
@@ -410,7 +444,7 @@ export async function executeCompletion(
             }
 
             // First chunk arrived: committed to this provider.
-            await report(env, account.id, true);
+            reportLater(executionCtx, env, account, true);
             if (isFallbackAttempt) {
                 tracker.fallbackOccurred = true;
                 tracker.fallbackPath.push(currentModel);
@@ -581,9 +615,15 @@ export async function executeCompletion(
                 }
             }
 
+            // When interception is impossible (max depth reached), stream chunks
+            // straight through instead of buffering the whole response.
+            // Buffering exists only to assemble tool calls for interception;
+            // at max depth the intercept branch can never trigger, so
+            // interceptingStream() would just replay committed() verbatim.
+            const canIntercept = (input.depth ?? 0) < MAX_INTERCEPT_DEPTH;
             return {
                 kind: "stream",
-                chunks: interceptingStream(),
+                chunks: canIntercept ? interceptingStream() : committed(),
                 providerType: account.providerType,
                 accountId: account.id
             };

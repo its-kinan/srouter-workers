@@ -272,20 +272,155 @@ export async function decryptAccount(
 }
 
 /** Load all enabled accounts from D1 and decrypt them. */
-export async function loadAccounts(db: D1Database, masterKeyB64: string): Promise<DecryptedAccount[]> {
+export interface LoadAccountsOptions {
+    /**
+     * Only load/decrypt these provider types (e.g. ["tokenharbor"] for a
+     * "th/<model>" request). Skips the other ~340 rows entirely.
+     */
+    providerTypes?: string[];
+}
+
+// --- Isolate-local decrypted-account cache ---
+// loadAccounts() used to decrypt every enabled row on EVERY request. With
+// ~342 accounts that was ~50ms+ of pure AES-GCM CPU per request on top of
+// the DO round-trips — the main driver of Cloudflare 1102s under load.
+// Now decrypted accounts are cached per isolate and the providers table is
+// version-checked with one cheap aggregation query per request.
+//
+// Version tuple covers everything routing-relevant: row add/delete
+// (COUNT/MAX(created_at)), enable/disable (SUM(enabled)). OAuth token
+// refreshes intentionally do NOT invalidate: the previous token stays valid
+// for up to the TTL, and ensureFreshToken() self-heals per request when a
+// token is actually due. Admin edits (rename, custom headers) also settle
+// within the TTL bound.
+const ACCOUNT_CACHE_TTL_MS = 60_000;
+
+interface AccountCacheEntry {
+    accounts: DecryptedAccount[];
+    version: string;
+    loadedAt: number;
+}
+
+/** Cache key "" = full load; otherwise sorted provider list. */
+const accountCaches = new Map<string, AccountCacheEntry>();
+const accountCacheInflight = new Map<string, Promise<DecryptedAccount[]>>();
+
+async function providersVersion(db: D1Database): Promise<string> {
+    const row = await db
+        .prepare(
+            `SELECT COUNT(*) AS n,
+                    COALESCE(SUM(enabled), 0) AS e,
+                    COALESCE(MAX(created_at), 0) AS c
+             FROM providers`
+        )
+        .first<{ n: number; e: number; c: number }>();
+    return `${row?.n ?? 0}:${row?.e ?? 0}:${row?.c ?? 0}`;
+}
+
+async function readAndDecryptAll(
+    db: D1Database,
+    masterKeyB64: string
+): Promise<DecryptedAccount[]> {
     const res = await db
         .prepare("SELECT * FROM providers WHERE enabled = 1")
         .all<ProviderRow>();
+    return decryptRows(res.results ?? [], masterKeyB64);
+}
+
+async function readAndDecryptSelective(
+    db: D1Database,
+    masterKeyB64: string,
+    providerTypes: string[]
+): Promise<DecryptedAccount[]> {
+    const placeholders = providerTypes.map(() => "?").join(",");
+    const res = await db
+        .prepare(
+            `SELECT * FROM providers WHERE enabled = 1 AND provider_id IN (${placeholders})`
+        )
+        .bind(...providerTypes)
+        .all<ProviderRow>();
+    return decryptRows(res.results ?? [], masterKeyB64);
+}
+
+async function decryptRows(
+    rows: ProviderRow[],
+    masterKeyB64: string
+): Promise<DecryptedAccount[]> {
     const accounts: DecryptedAccount[] = [];
-    for (const row of res.results ?? []) {
+    for (const row of rows) {
         try {
             accounts.push(await decryptAccount(row, masterKeyB64));
-        } catch (err) {
+        } catch {
             // A corrupt envelope must not take down routing for healthy accounts.
             console.error(`Skipping account ${row.id}: failed to decrypt secrets`);
         }
     }
     return accounts;
+}
+
+export async function loadAccounts(
+    db: D1Database,
+    masterKeyB64: string,
+    opts: LoadAccountsOptions = {}
+): Promise<DecryptedAccount[]> {
+    const types = opts.providerTypes?.length ? [...opts.providerTypes].sort() : [];
+    const key = types.join(",");
+    const now = Date.now();
+
+    const cached = accountCaches.get(key);
+    if (cached && now - cached.loadedAt < ACCOUNT_CACHE_TTL_MS) {
+        // One cheap aggregation decides freshness; on match the 342
+        // decryptions are skipped entirely.
+        if ((await providersVersion(db)) === cached.version) {
+            cached.loadedAt = now; // extend the TTL while the table is quiet
+            return cached.accounts;
+        }
+    }
+
+    // Single-flight the reload so a cold isolate under burst doesn't
+    // decrypt the table N times concurrently.
+    let inflight = accountCacheInflight.get(key);
+    if (!inflight) {
+        inflight = (async () => {
+            const version = await providersVersion(db);
+            const accounts =
+                types.length > 0
+                    ? await readAndDecryptSelective(db, masterKeyB64, types)
+                    : await readAndDecryptAll(db, masterKeyB64);
+            accountCaches.set(key, { accounts, version, loadedAt: Date.now() });
+            return accounts;
+        })();
+        accountCacheInflight.set(key, inflight);
+        inflight.then(
+            () => {
+                if (accountCacheInflight.get(key) === inflight) {
+                    accountCacheInflight.delete(key);
+                }
+            },
+            () => {
+                if (accountCacheInflight.get(key) === inflight) {
+                    accountCacheInflight.delete(key);
+                }
+            }
+        );
+    }
+    return inflight;
+}
+
+/**
+ * Map a model routing prefix ("th", "tokenharbor") to its provider type,
+ * using provider ids and their aliases. Returns undefined for unknown
+ * prefixes (e.g. row-level custom aliases) — callers must full-load then.
+ */
+export function providerTypeForPrefix(prefix: string): string | undefined {
+    const p = prefix.toLowerCase();
+    for (const id of SUPPORTED_PROVIDERS) {
+        if (id.toLowerCase() === p) return id;
+    }
+    for (const [id, alias] of Object.entries(PROVIDER_ALIASES)) {
+        if (alias.toLowerCase() === p) return id;
+    }
+    return undefined;
 }
 
 /** An account plus its ready executor, for the request path. */

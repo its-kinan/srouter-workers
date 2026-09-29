@@ -15,9 +15,26 @@ import type { AppHonoEnv } from "../hono-env.js";
 import type { Env } from "../env.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import { listAllModels, loadAccounts, providerAlias } from "../providers/registry.js";
+import { getModelCatalog, rebuildModelCatalog } from "../router/catalog.js";
 import { catalogAliasFor } from "./v1/providers.js";
 
 export const modelsRoutes = new Hono<AppHonoEnv>();
+
+/**
+ * c.executionCtx throws ("This context has no ExecutionContext") under
+ * hono's test client (app.request). Production always has one. Treat it as
+ * optional: without it, catalog rebuilds run inline instead of via waitUntil.
+ */
+function maybeExecutionCtx(c: {
+    executionCtx: { waitUntil(p: Promise<unknown>): void };
+}): { waitUntil(p: Promise<unknown>): void } | undefined {
+    try {
+        const ec = c.executionCtx;
+        return typeof ec?.waitUntil === "function" ? ec : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 export interface ModelObject {
     id: string;
@@ -52,48 +69,30 @@ async function aliasForProvider(db: D1Database, providerId: string): Promise<str
  */
 export async function getMergedModels(
     env: Env,
-    opts: { providerFilter?: string; skipCache?: boolean } = {}
+    opts: { providerFilter?: string; skipCache?: boolean } = {},
+    executionCtx?: { waitUntil(p: Promise<unknown>): void }
 ): Promise<ModelObject[]> {
     const db = env.DB;
-    const stub = env.ROUTER_STATE.getByName("router");
 
-    // 1. Base list: upstream aggregation.
-    let base: ModelObject[];
-    if (!opts.skipCache && !opts.providerFilter) {
-        try {
-            const cached = await stub.fetch(new Request("https://do/models"));
-            const data = (await cached.json()) as { models: ModelObject[] | null };
-            // NOTE: an empty array is NOT a cache hit. A poisoned/empty cache
-            // must fall through to a live refresh instead of sticking until TTL.
-            if (data.models && data.models.length > 0) {
-                base = data.models;
-                return mergeDbModels(db, base, opts.providerFilter);
-            }
-        } catch {
-            // fall through to refresh
+    if (!opts.providerFilter) {
+        // Aggregated catalog: stale-while-revalidate. The request path never
+        // fans out to upstreams; the cron rebuilds in the background and a
+        // force refresh single-flights one rebuild.
+        if (opts.skipCache) {
+            await rebuildModelCatalog(env);
         }
+        const catalog = await getModelCatalog(env, executionCtx);
+        // getModelCatalog returns null only when no data exists at all
+        // (cold start + build failure). Custom/combo models are still merged
+        // below; upstream ids are simply absent until a build lands.
+        return mergeDbModels(db, catalog ?? [], undefined);
     }
 
+    // Per-provider detail view: aggregate just that provider's accounts.
     let accounts = await loadAccounts(db, env.MASTER_KEY);
-    if (opts.providerFilter) {
-        const f = opts.providerFilter.toLowerCase();
-        accounts = accounts.filter((a) => a.providerType.toLowerCase() === f);
-    }
-    base = (await listAllModels(accounts)) as ModelObject[];
-
-    // Only cache non-empty aggregations: caching [] would poison the DO cache
-    // and make /v1/models return nothing until the TTL expires.
-    if (!opts.providerFilter && base.length > 0) {
-        stub
-            .fetch(
-                new Request("https://do/models", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ models: base })
-                })
-            )
-            .catch(() => {});
-    }
+    const f = opts.providerFilter.toLowerCase();
+    accounts = accounts.filter((a) => a.providerType.toLowerCase() === f);
+    const base = (await listAllModels(accounts)) as ModelObject[];
     return mergeDbModels(db, base, opts.providerFilter);
 }
 
@@ -168,11 +167,12 @@ modelsRoutes.get("/models", apiKeyAuth, async (c) => {
     const cacheControl = c.req.header("cache-control") ?? "";
     const revalidate = cacheControl.includes("no-cache") || cacheControl.includes("no-store");
 
-    let models = await getMergedModels(c.env, { skipCache: force });
+    let models = await getMergedModels(c.env, { skipCache: force }, maybeExecutionCtx(c));
 
-    if (revalidate && !force) {
+    const bgCtx = maybeExecutionCtx(c);
+    if (revalidate && !force && bgCtx) {
         // Serve the cached view, refresh the DO cache in the background (SRouter parity).
-        c.executionCtx.waitUntil(getMergedModels(c.env, { skipCache: true }).catch(() => []));
+        bgCtx.waitUntil(getMergedModels(c.env, { skipCache: true }, bgCtx).catch(() => []));
     }
 
     // Model allow-list for restricted virtual keys (SRouter's EnforceModelAccess).
@@ -245,7 +245,7 @@ modelsRoutes.get("/models/:model{.+}", apiKeyAuth, async (c) => {
         c.req.query("force") === "true" ||
         c.req.query("force") === "1";
 
-    const models = await getMergedModels(c.env, { skipCache: force });
+    const models = await getMergedModels(c.env, { skipCache: force }, maybeExecutionCtx(c));
     const found = models.find((m) => m.id.toLowerCase() === modelId.toLowerCase());
     if (found) {
         c.header("Cache-Control", "public, max-age=60, stale-while-revalidate=300");

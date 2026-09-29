@@ -21,6 +21,7 @@ import { z } from "zod";
 import type { Env } from "../env.js";
 import type { AppHonoEnv } from "../hono-env.js";
 import { hashPassword, sha256Hex, verifyPassword } from "../crypto/password.js";
+import { routerShardName } from "../router/durable.js";
 
 export const ADMIN_SESSION_COOKIE = "srouter_admin_session";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -186,10 +187,30 @@ adminRoutes.get("/admin/summary", async (c) => {
     ]);
     let routerHealth: unknown = null;
     try {
-        const res = await env.ROUTER_STATE.getByName("router").fetch(
-            new Request("https://do/health")
+        // Circuit-breaker state now lives in per-provider RouterState shards
+        // (see routerShardName); merge them for the dashboard health view.
+        const shards = await env.DB.prepare(
+            "SELECT DISTINCT provider_id FROM providers WHERE enabled = 1"
+        ).all<{ provider_id: string }>();
+        const settled = await Promise.allSettled(
+            (shards.results ?? []).map(async (s) => {
+                const res = await env.ROUTER_STATE.getByName(
+                    routerShardName(s.provider_id)
+                ).fetch(new Request("https://do/health"));
+                return (await res.json()) as {
+                    states: Record<string, unknown>;
+                    roundRobin: Record<string, number>;
+                };
+            })
         );
-        routerHealth = await res.json();
+        const states: Record<string, unknown> = {};
+        const roundRobin: Record<string, number> = {};
+        for (const s of settled) {
+            if (s.status !== "fulfilled") continue;
+            Object.assign(states, s.value.states);
+            Object.assign(roundRobin, s.value.roundRobin);
+        }
+        routerHealth = { states, roundRobin };
     } catch {
         routerHealth = null;
     }

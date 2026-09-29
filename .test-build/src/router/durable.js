@@ -20,7 +20,27 @@
 //   POST /reset   { accountId? } -> clears circuit state (admin/debug)
 const DEFAULT_COOLDOWN_MS = 30_000;
 const MAX_COOLDOWN_MS = 5 * 60_000;
-const MODEL_CACHE_TTL_MS = 5 * 60_000;
+/** Model catalog TTL. Exported so workers can implement stale-while-revalidate. */
+export const MODEL_CACHE_TTL_MS = 5 * 60_000;
+/**
+ * Debounce window for circuit-breaker storage writes. report() used to do a
+ * full-state storage.put per call; under load that serialized hundreds of
+ * writes/sec on the single DO instance. Now writes coalesce per window —
+ * in-memory state stays exact, only durability is delayed.
+ */
+const REPORT_SAVE_DEBOUNCE_MS = 1_000;
+/**
+ * RouterState sharding. The request path used to funnel every /route and
+ * /report through the single "router" instance. Circuit-breaker and
+ * round-robin state is naturally per-provider, so each provider type gets
+ * its own shard — semantics-preserving, no single funnel.
+ * The "router" instance keeps the global data: model catalog, OAuth refresh
+ * locks, admin reset/health.
+ */
+export const ROUTER_GLOBAL_NAME = "router";
+export function routerShardName(providerType) {
+    return `${ROUTER_GLOBAL_NAME}-${providerType}`;
+}
 const RATE_LIMIT_PATTERNS = [
     /rate\s*limit/i,
     /too\s+many\s+requests/i,
@@ -43,6 +63,7 @@ export class RouterState {
     ctx;
     state = emptyState();
     loaded = false;
+    saveTimer = null;
     constructor(ctx, _env) {
         this.ctx = ctx;
     }
@@ -58,6 +79,32 @@ export class RouterState {
     }
     save() {
         return this.ctx.storage.put("state", this.state);
+    }
+    /**
+     * Coalesced write for hot paths (report()). In-memory state is updated
+     * synchronously by the caller, so read-your-writes holds; only the
+     * storage.put is delayed and coalesced within the window.
+     */
+    saveDebounced() {
+        if (this.saveTimer !== null)
+            return;
+        const fire = () => {
+            this.saveTimer = null;
+            this.save().catch(() => { });
+        };
+        if (typeof this.ctx.waitUntil === "function") {
+            // Production: keep the isolate alive until the write lands.
+            this.ctx.waitUntil(new Promise((resolve) => {
+                this.saveTimer = setTimeout(() => {
+                    fire();
+                    resolve();
+                }, REPORT_SAVE_DEBOUNCE_MS);
+            }));
+        }
+        else {
+            // Unit-test stub has no waitUntil; a plain timer suffices.
+            this.saveTimer = setTimeout(fire, REPORT_SAVE_DEBOUNCE_MS);
+        }
     }
     healthOf(id) {
         let h = this.state.circuit[id];
@@ -126,7 +173,8 @@ export class RouterState {
                     : "exhausted";
             h.cooldownUntil = now + cooldown;
         }
-        await this.save();
+        // Hot path: coalesce the storage write (see saveDebounced).
+        this.saveDebounced();
     }
     async fetch(request) {
         await this.load();
@@ -157,10 +205,10 @@ export class RouterState {
             }
             if (request.method === "GET" && url.pathname === "/models") {
                 const cache = this.state.modelCache;
-                if (!cache || Date.now() - cache.cachedAt > MODEL_CACHE_TTL_MS) {
-                    return json({ models: null, cachedAt: cache?.cachedAt ?? null });
-                }
-                return json({ models: cache.models, cachedAt: cache.cachedAt });
+                // Stale-while-revalidate: always serve what we have (even past
+                // TTL); the worker decides freshness from cachedAt and rebuilds
+                // in the background. { models: null } only when never built.
+                return json({ models: cache?.models ?? null, cachedAt: cache?.cachedAt ?? null });
             }
             if (request.method === "POST" && url.pathname === "/refresh/try") {
                 const body = (await request.json());
