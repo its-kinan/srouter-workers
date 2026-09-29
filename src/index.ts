@@ -30,6 +30,7 @@ import type { AppHonoEnv } from "./hono-env.js";
 import { createCorsMiddleware, parseAllowedOrigins } from "./middleware/cors.js";
 import { createBodyLimitMiddleware } from "./middleware/bodyLimit.js";
 import { createCsrfOriginGuard } from "./middleware/csrf.js";
+import { securityHeaders } from "./middleware/securityHeaders.js";
 import { chatRoutes } from "./routes/chat.js";
 import { messagesRoutes } from "./routes/v1/messages.js";
 import { modelsRoutes } from "./routes/models.js";
@@ -82,6 +83,9 @@ function csrfFor(envValue: string | undefined): MiddlewareHandler<AppHonoEnv> {
     return mw;
 }
 
+// Baseline security headers on every response (CSP for HTML shells).
+// Registered first so it wraps all downstream handlers on the way out.
+app.use(securityHeaders);
 // CORS: Access-Control-Allow-* headers + OPTIONS preflight on /v1/*.
 app.use("/v1/*", (c, next) => corsFor(c.env.SROUTER_CORS_ORIGINS)(c, next));
 // CSRF origin guard for cookie-authenticated mutations on admin/auth routes.

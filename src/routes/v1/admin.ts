@@ -23,6 +23,11 @@ import type { AppHonoEnv } from "../../hono-env.js";
 import { hashPassword, sha256Hex, verifyPassword } from "../../crypto/password.js";
 import { ADMIN_SESSION_COOKIE, verifyAdminSession } from "../admin.js";
 import { requireAdmin } from "../../middleware/requireAdmin.js";
+import {
+    isLoginBlocked,
+    recordLoginFailure,
+    clearLoginFailures
+} from "../../middleware/loginRateLimit.js";
 import { apiError } from "../../lib/api-error.js";
 
 export const v1AdminRoutes = new Hono<AppHonoEnv>();
@@ -100,26 +105,10 @@ v1AdminRoutes.post("/setup", async (c) => {
     return c.json({ authenticated: true }, 201);
 });
 
-// --- login rate limiting (per-isolate in-memory map, like the original's per-process map) ---
-
-const loginAttempts = new Map<string, { count: number; blockedUntil: number }>();
-const MAX_LOGIN_FAILURES = 5;
-const LOGIN_BLOCK_MS = 15 * 60 * 1000;
-
-function clientIp(c: Context<AppHonoEnv>): string {
-    return (
-        c.req.header("CF-Connecting-IP") ??
-        c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ??
-        "unknown"
-    );
-}
-
 v1AdminRoutes.post("/login", async (c) => {
     const env = c.env;
-    const ip = clientIp(c);
-    const now = Date.now();
-    const attempt = loginAttempts.get(ip);
-    if (attempt && attempt.blockedUntil > now) {
+    // Brute-force protection: 5 failures from one IP -> 15 minute block.
+    if (isLoginBlocked(c)) {
         return apiError(c, 429, "Too many failed login attempts. Try again later.", "login_rate_limited");
     }
     // Anti-oracle: schema failure and wrong password produce the identical 401.
@@ -130,14 +119,10 @@ v1AdminRoutes.post("/login", async (c) => {
     const ok =
         !!parsed.success && !!row && (await verifyPassword(parsed.data.password, row.password_hash));
     if (!ok) {
-        let entry = loginAttempts.get(ip);
-        if (!entry || entry.blockedUntil <= now) entry = { count: 0, blockedUntil: 0 };
-        entry.count += 1;
-        if (entry.count >= MAX_LOGIN_FAILURES) entry.blockedUntil = now + LOGIN_BLOCK_MS;
-        loginAttempts.set(ip, entry);
+        recordLoginFailure(c);
         return apiError(c, 401, "Invalid credentials", "invalid_credentials");
     }
-    loginAttempts.delete(ip);
+    clearLoginFailures(c);
     setSessionCookie(c, await createSession(env.DB), env);
     return c.json({ authenticated: true });
 });

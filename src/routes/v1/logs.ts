@@ -334,6 +334,18 @@ type WindowKey = keyof typeof WINDOWS;
 
 logsRoutes.get("/analytics", apiKeyAuth, async (c) => {
     const db = c.env.DB;
+
+    // Edge cache (caches.default), 60s TTL, keyed by URL (includes the
+    // window param). Analytics are global aggregates — identical for every
+    // API key. `caches` is undefined under node --test.
+    const storage = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+    const edge = storage?.default ?? null;
+    const cacheKey = edge ? new Request(c.req.url) : null;
+    if (edge && cacheKey) {
+        const hit = await edge.match(cacheKey);
+        if (hit) return hit;
+    }
+
     const window = (c.req.query("window") ?? "24h") as string;
     if (!(window in WINDOWS)) {
         return apiError(c, 400, "Invalid window parameter", "invalid_window");
@@ -498,7 +510,8 @@ logsRoutes.get("/analytics", apiKeyAuth, async (c) => {
         totalRequests: r.total_requests
     }));
 
-    return c.json({
+    c.header("Cache-Control", "public, max-age=60");
+    const response = c.json({
         object: "analytics",
         window,
         bucketSizeMs,
@@ -512,6 +525,19 @@ logsRoutes.get("/analytics", apiKeyAuth, async (c) => {
         topAgents,
         providers
     });
+    if (edge && cacheKey) {
+        const put = edge.put(cacheKey, response.clone()).catch(() => {});
+        let bgCtx: { waitUntil(p: Promise<unknown>): void } | undefined;
+        try {
+            const ec = c.executionCtx;
+            bgCtx = typeof ec?.waitUntil === "function" ? ec : undefined;
+        } catch {
+            bgCtx = undefined;
+        }
+        if (bgCtx) bgCtx.waitUntil(put);
+        else await put;
+    }
+    return response;
 });
 
 // ---------------------------------------------------------------------------

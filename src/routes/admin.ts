@@ -22,6 +22,11 @@ import type { Env } from "../env.js";
 import type { AppHonoEnv } from "../hono-env.js";
 import { hashPassword, sha256Hex, verifyPassword } from "../crypto/password.js";
 import { switchShardName } from "../router/durable.js";
+import {
+    isLoginBlocked,
+    recordLoginFailure,
+    clearLoginFailures
+} from "../middleware/loginRateLimit.js";
 
 export const ADMIN_SESSION_COOKIE = "srouter_admin_session";
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -130,6 +135,10 @@ adminRoutes.post("/admin/setup", async (c) => {
 
 adminRoutes.post("/admin/login", async (c) => {
     const env = c.env;
+    // Brute-force protection, mirroring /v1/admin/login.
+    if (isLoginBlocked(c)) {
+        return c.json({ error: "Too many failed login attempts. Try again later." }, 429);
+    }
     const row = await env.DB.prepare(
         "SELECT password_hash FROM admin_account WHERE id = 1"
     ).first<{ password_hash: string }>();
@@ -140,8 +149,10 @@ adminRoutes.post("/admin/login", async (c) => {
         .object({ password: z.string() })
         .safeParse(await c.req.json().catch(() => null));
     if (!parsed.success || !(await verifyPassword(parsed.data.password, row.password_hash))) {
+        recordLoginFailure(c);
         return c.json({ error: "Invalid password" }, 401);
     }
+    clearLoginFailures(c);
     const token = [...crypto.getRandomValues(new Uint8Array(32))]
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
