@@ -48,8 +48,8 @@ describe("orderCandidatesLocally — latency-aware ordering", () => {
     it("prefers the consistently fast account over the slow one", () => {
         const fast = makeAccount("acc_fast");
         const slow = makeAccount("acc_slow");
-        recordLatencySample("acc_fast", 100);
-        recordLatencySample("acc_slow", 2000);
+        recordLatencySample("acc_fast", undefined, 100);
+        recordLatencySample("acc_slow", undefined, 2000);
         const ordered = orderCandidatesLocally([slow, fast]);
         assert.deepEqual(
             ordered.map((a) => a.id),
@@ -60,9 +60,9 @@ describe("orderCandidatesLocally — latency-aware ordering", () => {
     it("EMA blends samples: 100 then 200 => ema 120, sorts before a 150ms account", () => {
         const blended = makeAccount("acc_blended");
         const mid = makeAccount("acc_mid");
-        recordLatencySample("acc_blended", 100);
-        recordLatencySample("acc_blended", 200); // ema = 100 + 0.2*100 = 120
-        recordLatencySample("acc_mid", 150);
+        recordLatencySample("acc_blended", undefined, 100);
+        recordLatencySample("acc_blended", undefined, 200); // ema = 100 + 0.2*100 = 120
+        recordLatencySample("acc_mid", undefined, 150);
         const ordered = orderCandidatesLocally([mid, blended]);
         assert.equal(ordered[0]!.id, "acc_blended");
     });
@@ -70,7 +70,7 @@ describe("orderCandidatesLocally — latency-aware ordering", () => {
     it("accounts with no samples sort before measured ones (discovery)", () => {
         const fresh = makeAccount("acc_fresh");
         const slow = makeAccount("acc_slow");
-        recordLatencySample("acc_slow", 2000);
+        recordLatencySample("acc_slow", undefined, 2000);
         const ordered = orderCandidatesLocally([slow, fresh]);
         assert.equal(ordered[0]!.id, "acc_fresh");
     });
@@ -80,8 +80,8 @@ describe("orderCandidatesLocally — latency-aware ordering", () => {
         const env = makeEnv(captured);
         const fast = makeAccount("acc_fast");
         const slow = makeAccount("acc_slow");
-        recordLatencySample("acc_fast", 50);
-        recordLatencySample("acc_slow", 2000);
+        recordLatencySample("acc_fast", undefined, 50);
+        recordLatencySample("acc_slow", undefined, 2000);
         // Fast account fails -> cooling for 30s despite its great EMA.
         reportLater(noopCtx, env, fast, false, "boom", 5000);
         await new Promise((r) => setTimeout(r, 0)); // let waitUntil fire

@@ -54,6 +54,7 @@ Behavior vars (set in `wrangler.toml` `[vars]` or via the dashboard):
 | `SROUTER_DISABLE_REQUEST_LOGS=1` | No `request_logs` writes at all |
 | `SROUTER_LOG_ALL_REQUESTS=1` | Log every request, not just errors |
 | `SROUTER_LOG_RETENTION_DAYS` | Log pruning retention, default 30 (≤0 disables) |
+| `SROUTER_HEDGE_DELAY_MS` | Delayed-hedging first-byte timeout in ms, default 2000. When the fastest candidate hasn't produced its first chunk within this delay, a hedge attempt fires at the next-fastest candidate and whichever yields first wins (loser abandoned; each hedge counts toward `SROUTER_MAX_ATTEMPTS`). ≤0 disables hedging; pinned (`model#account`) requests never hedge |
 | `SROUTER_MAX_ATTEMPTS` | Max upstream failover attempts per model candidate, default 10 |
 | `STEALTH_HEADER_OVERRIDES` | JSON header overrides per provider (never logged) |
 

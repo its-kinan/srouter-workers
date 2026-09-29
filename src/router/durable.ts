@@ -59,6 +59,22 @@ interface PersistedState {
      * map capped).
      */
     latency: Record<string, { ema: number; samples: number; updatedAt: number }>;
+    /**
+     * Per-(account, model) latency EMA, keyed by latencyPairKey(). An
+     * account can be fast for one model and slow for another; the router
+     * prefers the pair-specific EMA and falls back to the account-level one.
+     * Same update/prune/cap discipline as `latency`.
+     */
+    latencyPairs: Record<string, { ema: number; samples: number; updatedAt: number }>;
+    /**
+     * Per-account response-quality tracking (decayed counters): `bad`
+     * counts completed streams that produced no usable output (zero
+     * completion tokens, no text, no tool calls); `total` counts all
+     * completed streams. The router multiplies the account's latency EMA by
+     * (1 + 3 * bad/total) once enough samples exist — deprioritized, never
+     * hard-excluded (the circuit breaker still owns hard failures).
+     */
+    quality: Record<string, { bad: number; total: number; updatedAt: number }>;
 }
 
 const DEFAULT_COOLDOWN_MS = 30_000;
@@ -105,7 +121,9 @@ const emptyState = (): PersistedState => ({
     circuit: {},
     modelCache: null,
     refreshLocks: {},
-    latency: {}
+    latency: {},
+    latencyPairs: {},
+    quality: {}
 });
 
 /** EMA weight for each new latency sample (successes only). */
@@ -114,6 +132,20 @@ const LATENCY_EMA_ALPHA = 0.2;
 const LATENCY_STALE_MS = 24 * 60 * 60 * 1000;
 /** Cap on stored latency entries (only recently-seen accounts are kept). */
 const MAX_LATENCY_ENTRIES = 1000;
+/** Decay per quality sample; recent attempts dominate the bad-rate. */
+const QUALITY_DECAY = 0.9;
+/** Cap on stored quality entries. */
+const MAX_QUALITY_ENTRIES = 1000;
+
+/**
+ * Composite key for per-(account, model) latency tracking. "\n" cannot
+ * appear in account ids or model names, so the key is unambiguous and
+ * prefix-deletable per account. Shared with the worker's isolate-local
+ * pair map (completion.ts imports this).
+ */
+export function latencyPairKey(accountId: string, model: string): string {
+    return `${accountId}\n${model}`;
+}
 
 export class SwitchState {
     private ctx: DurableObjectState;
@@ -158,6 +190,7 @@ export class SwitchState {
 
     private save(): Promise<void> {
         this.pruneLatency();
+        this.pruneQuality();
         return this.ctx.storage.put("state", this.state);
     }
 
@@ -166,15 +199,27 @@ export class SwitchState {
      * at MAX_LATENCY_ENTRIES by recency. Runs on every persisted save.
      */
     private pruneLatency(): void {
+        this.pruneTimestampedMap(this.state.latency, MAX_LATENCY_ENTRIES);
+        this.pruneTimestampedMap(this.state.latencyPairs, MAX_LATENCY_ENTRIES);
+    }
+
+    /** Same bound for the quality map. */
+    private pruneQuality(): void {
+        this.pruneTimestampedMap(this.state.quality, MAX_QUALITY_ENTRIES);
+    }
+
+    private pruneTimestampedMap(
+        map: Record<string, { updatedAt: number }>,
+        cap: number
+    ): void {
         const now = Date.now();
-        const lat = this.state.latency;
-        for (const id of Object.keys(lat)) {
-            if (now - (lat[id]?.updatedAt ?? 0) > LATENCY_STALE_MS) delete lat[id];
+        for (const id of Object.keys(map)) {
+            if (now - (map[id]?.updatedAt ?? 0) > LATENCY_STALE_MS) delete map[id];
         }
-        const ids = Object.keys(lat);
-        if (ids.length > MAX_LATENCY_ENTRIES) {
-            ids.sort((a, b) => (lat[a]?.updatedAt ?? 0) - (lat[b]?.updatedAt ?? 0));
-            for (const id of ids.slice(0, ids.length - MAX_LATENCY_ENTRIES)) delete lat[id];
+        const ids = Object.keys(map);
+        if (ids.length > cap) {
+            ids.sort((a, b) => (map[a]?.updatedAt ?? 0) - (map[b]?.updatedAt ?? 0));
+            for (const id of ids.slice(0, ids.length - cap)) delete map[id];
         }
     }
 
@@ -306,14 +351,16 @@ export class SwitchState {
 
     private async report(
         accountId: string,
-        ok: boolean,
+        ok: boolean | undefined,
         error?: string,
         retryAfterMs?: number,
-        latencyMs?: number
+        latencyMs?: number,
+        model?: string,
+        qualityBad?: boolean
     ): Promise<void> {
         const h = this.healthOf(accountId);
         const now = Date.now();
-        if (ok) {
+        if (ok === true) {
             h.state = "healthy";
             h.consecutiveFailures = 0;
             h.lastSuccessTime = now;
@@ -332,8 +379,21 @@ export class SwitchState {
                     samples: (prev?.samples ?? 0) + 1,
                     updatedAt: now
                 };
+                // Per-(account, model) EMA alongside the account-level one.
+                if (typeof model === "string" && model) {
+                    const key = latencyPairKey(accountId, model);
+                    const pprev = this.state.latencyPairs[key];
+                    this.state.latencyPairs[key] = {
+                        ema:
+                            pprev === undefined
+                                ? latencyMs
+                                : pprev.ema + LATENCY_EMA_ALPHA * (latencyMs - pprev.ema),
+                        samples: (pprev?.samples ?? 0) + 1,
+                        updatedAt: now
+                    };
+                }
             }
-        } else {
+        } else if (ok === false) {
             h.consecutiveFailures += 1;
             h.lastFailureTime = now;
             h.lastErrorMessage = (error ?? "unknown error").slice(0, 500);
@@ -347,6 +407,17 @@ export class SwitchState {
                     ? "cooldown"
                     : "exhausted";
             h.cooldownUntil = now + cooldown;
+        }
+        // Response-quality tracking (decayed counters), independent of the
+        // ok/fail branches above: a quality-only report carries ok=undefined.
+        // Only completed streams report quality, so a "bad" here means the
+        // upstream answered with no usable output.
+        if (typeof qualityBad === "boolean") {
+            const q = this.state.quality[accountId] ?? { bad: 0, total: 0, updatedAt: 0 };
+            q.bad = q.bad * QUALITY_DECAY + (qualityBad ? 1 : 0);
+            q.total = q.total * QUALITY_DECAY + 1;
+            q.updatedAt = now;
+            this.state.quality[accountId] = q;
         }
         // Hot path: coalesce the storage write (see saveDebounced).
         this.saveDebounced();
@@ -366,17 +437,21 @@ export class SwitchState {
             if (request.method === "POST" && url.pathname === "/report") {
                 const body = (await request.json()) as {
                     accountId: string;
-                    ok: boolean;
+                    ok?: boolean;
                     error?: string;
                     retryAfterMs?: number;
                     latencyMs?: number;
+                    model?: string;
+                    qualityBad?: boolean;
                 };
                 await this.report(
                     body.accountId,
                     body.ok,
                     body.error,
                     body.retryAfterMs,
-                    body.latencyMs
+                    body.latencyMs,
+                    body.model,
+                    body.qualityBad
                 );
                 return json({ ok: true });
             }
@@ -417,7 +492,18 @@ export class SwitchState {
                 for (const [id, l] of Object.entries(this.state.latency)) {
                     latency[id] = { emaMs: Math.round(l.ema), samples: l.samples };
                 }
-                return json({ states, roundRobin: this.state.roundRobin, latency });
+                const latencyPairs: Record<string, { emaMs: number; samples: number }> = {};
+                for (const [key, l] of Object.entries(this.state.latencyPairs)) {
+                    latencyPairs[key] = { emaMs: Math.round(l.ema), samples: l.samples };
+                }
+                const quality: Record<string, { badRate: number; samples: number }> = {};
+                for (const [id, q] of Object.entries(this.state.quality)) {
+                    quality[id] = {
+                        badRate: q.total > 0 ? Math.round((q.bad / q.total) * 100) / 100 : 0,
+                        samples: Math.round(q.total)
+                    };
+                }
+                return json({ states, roundRobin: this.state.roundRobin, latency, latencyPairs, quality });
             }
             if (request.method === "POST" && url.pathname === "/models") {
                 const body = (await request.json()) as { models: ModelObject[] };
@@ -446,9 +532,16 @@ export class SwitchState {
                 if (body.accountId) {
                     delete this.state.circuit[body.accountId];
                     delete this.state.latency[body.accountId];
+                    delete this.state.quality[body.accountId];
+                    const prefix = `${body.accountId}\n`;
+                    for (const key of Object.keys(this.state.latencyPairs)) {
+                        if (key.startsWith(prefix)) delete this.state.latencyPairs[key];
+                    }
                 } else {
                     this.state.circuit = {};
                     this.state.latency = {};
+                    this.state.latencyPairs = {};
+                    this.state.quality = {};
                 }
                 await this.save();
                 return json({ ok: true });

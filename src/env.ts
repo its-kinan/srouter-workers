@@ -54,6 +54,15 @@ export interface Env {
      * upstream attempts.
      */
     SROUTER_MAX_ATTEMPTS?: string;
+    /**
+     * Delayed hedging for time-to-first-byte, in ms. When the fastest
+     * candidate account produces no first response byte within this delay,
+     * a second attempt fires at the next-fastest candidate; whichever
+     * yields first byte wins and the loser is abandoned. Default 2000.
+     * 0 or negative disables hedging. Never hedges pinned (single-account)
+     * requests. Each hedged attempt counts against SROUTER_MAX_ATTEMPTS.
+     */
+    SROUTER_HEDGE_DELAY_MS?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */
     BRAVE_API_KEY?: string;
     TAVILY_API_KEY?: string;
