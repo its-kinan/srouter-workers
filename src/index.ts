@@ -30,6 +30,7 @@ import type { AppHonoEnv } from "./hono-env.js";
 import { createCorsMiddleware, parseAllowedOrigins } from "./middleware/cors.js";
 import { createBodyLimitMiddleware } from "./middleware/bodyLimit.js";
 import { createCsrfOriginGuard } from "./middleware/csrf.js";
+import { securityHeaders, DASHBOARD_CSP, BASELINE_HEADERS } from "./middleware/securityHeaders.js";
 import { chatRoutes } from "./routes/chat.js";
 import { messagesRoutes } from "./routes/v1/messages.js";
 import { modelsRoutes } from "./routes/models.js";
@@ -82,6 +83,9 @@ function csrfFor(envValue: string | undefined): MiddlewareHandler<AppHonoEnv> {
     return mw;
 }
 
+// Baseline security headers on every response (CSP for HTML shells).
+// Registered first so it wraps all downstream handlers on the way out.
+app.use(securityHeaders);
 // CORS: Access-Control-Allow-* headers + OPTIONS preflight on /v1/*.
 app.use("/v1/*", (c, next) => corsFor(c.env.SROUTER_CORS_ORIGINS)(c, next));
 // CSRF origin guard for cookie-authenticated mutations on admin/auth routes.
@@ -143,7 +147,11 @@ app.notFound((c) => {
         status: 200,
         headers: {
             "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "no-cache"
+            "Cache-Control": "no-cache",
+            // The global securityHeaders middleware does not run for
+            // notFound responses, so set the headers here directly.
+            ...BASELINE_HEADERS,
+            "Content-Security-Policy": DASHBOARD_CSP
         }
     });
 });
@@ -271,3 +279,4 @@ export default {
 export { app };
 
 export { SwitchState };
+export { LoginRateLimit } from "./router/loginRateLimit.js";
