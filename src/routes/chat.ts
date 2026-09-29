@@ -14,7 +14,13 @@ import type { AppHonoEnv } from "../hono-env.js";
 import { apiKeyAuth, type ApiKeyRow } from "../middleware/apiKeyAuth.js";
 import { rateLimit } from "../middleware/rateLimit.js";
 import { executeCompletion } from "../router/completion.js";
+import { accountCacheStats } from "../providers/registry.js";
 import type { ChatCompletionChunk, ChatCompletionRequest } from "../vendor/types/index.js";
+
+/** "hits=N misses=M" for the isolate that served the request. */
+function cacheHeader(): string {
+    return `hits=${accountCacheStats.hits} misses=${accountCacheStats.misses}`;
+}
 
 export const chatRoutes = new Hono<AppHonoEnv>();
 
@@ -74,12 +80,15 @@ async function handleChatCompletion(c: Context<AppHonoEnv>) {
                     code: outcome.code
                 }
             },
-            outcome.status
+            outcome.status,
+            // Per-isolate cache observability: the counters belong to the
+            // isolate that served this request.
+            { "X-Account-Cache": cacheHeader() }
         );
     }
 
     if (outcome.kind === "json") {
-        return c.json(outcome.response);
+        return c.json(outcome.response, 200, { "X-Account-Cache": cacheHeader() });
     }
 
     const stream = new ReadableStream<Uint8Array>({
@@ -106,7 +115,8 @@ async function handleChatCompletion(c: Context<AppHonoEnv>) {
             "Cache-Control": "no-cache",
             Connection: "keep-alive",
             "X-Provider": outcome.providerType,
-            "X-Account-Id": outcome.accountId
+            "X-Account-Id": outcome.accountId,
+            "X-Account-Cache": cacheHeader()
         }
     });
 }
