@@ -61,6 +61,16 @@ export interface ProviderConfig {
     createdAt: number;
 }
 
+/**
+ * Symbol-keyed channel for a pre-serialized upstream request body.
+ * The router serializes the translated chat payload ONCE per request and
+ * attaches the string here; executors that understand it skip their own
+ * JSON.stringify (saves ~ms per failover/hedge attempt on large prompts —
+ * real 1102 budget on the Free plan). Executors that don't understand it
+ * ignore the symbol and serialize as before.
+ */
+export const PRE_SERIALIZED_BODY: unique symbol = Symbol.for("switch.preSerializedBody");
+
 export interface AIProvider {
     id: string;
     name: string;
@@ -80,4 +90,11 @@ export interface AIProvider {
         req: ImageGenerationRequest,
         budget?: RequestAttemptBudget
     ): Promise<ImageGenerationResponse>;
+    /**
+     * Build the exact serialized upstream payload for a chat request.
+     * Optional: executors that implement it let the router serialize once
+     * per request and reuse the string across failover/hedge attempts
+     * (via PRE_SERIALIZED_BODY) instead of re-stringifying per attempt.
+     */
+    serializeChatPayload?(req: ChatCompletionRequest, stream: boolean): string | undefined;
 }

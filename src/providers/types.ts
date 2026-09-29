@@ -64,6 +64,12 @@ export interface ProviderAdapter {
         req: ImageGenerationRequest,
         budget?: RequestAttemptBudget
     ): Promise<ImageGenerationResponse>;
+    /**
+     * Optional serialize-once hook (see AIProvider.serializeChatPayload).
+     * When present, the router serializes the translated payload once per
+     * request and reuses it across failover/hedge attempts.
+     */
+    serializeChatPayload?(req: ChatCompletionRequest, stream: boolean): string | undefined;
 }
 
 export function asAdapter(executor: AIProvider, adapterId: string): ProviderAdapter {
@@ -74,6 +80,9 @@ export function asAdapter(executor: AIProvider, adapterId: string): ProviderAdap
         chatCompletionStream: (req, budget) => executor.chatCompletionStream(req, budget),
         generateImage: executor.generateImage
             ? (req, budget) => executor.generateImage!(req, budget)
+            : undefined,
+        serializeChatPayload: executor.serializeChatPayload
+            ? (req, stream) => executor.serializeChatPayload!(req, stream)
             : undefined
     };
 }

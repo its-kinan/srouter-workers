@@ -50,6 +50,7 @@ import type {
     ModelObject,
     ToolCall
 } from "../vendor/types/index.js";
+import { PRE_SERIALIZED_BODY } from "../vendor/types/index.js";
 import { accumulateChunks } from "../vendor/translator/index.js";
 import { calculateCostFromTokens, getPricingForModel } from "../vendor/pricing.js";
 import { estimateTokens } from "./tokens.js";
@@ -134,6 +135,14 @@ export function resolveMaxAttempts(env: Env): number {
 
 /** Default delay before firing a hedged second attempt (ms). */
 export const DEFAULT_HEDGE_DELAY_MS = 2000;
+
+/**
+ * Hedge-delay scale factor for slow-TTFB models. When a model's observed
+ * time-to-first-chunk EMA exceeds the configured hedge delay, the delay is
+ * raised to EMA * this factor so the hedge only fires when the primary is
+ * slower than the model's usual — not on every request.
+ */
+export const SLOW_MODEL_HEDGE_FACTOR = 1.5;
 
 /**
  * Delay before hedging a slow first byte, from SROUTER_HEDGE_DELAY_MS.
@@ -313,6 +322,24 @@ function inflightOf(accountId: string): number {
     return inflightByAccount.get(accountId) ?? 0;
 }
 
+/**
+ * Effective hedge delay for a model candidate: the configured delay, raised
+ * to TTFB-EMA * SLOW_MODEL_HEDGE_FACTOR when the model is observably slower
+ * than the configured delay. Exported for unit tests.
+ */
+export function resolveEffectiveHedgeDelayMs(
+    baseDelayMs: number,
+    candidates: AccountMeta[],
+    model: string
+): number {
+    if (baseDelayMs <= 0) return baseDelayMs;
+    const ttfbEmaMs = minTtfbEmaMs(candidates, model);
+    if (ttfbEmaMs !== undefined && ttfbEmaMs > baseDelayMs) {
+        return Math.ceil(ttfbEmaMs * SLOW_MODEL_HEDGE_FACTOR);
+    }
+    return baseDelayMs;
+}
+
 /** Effective latency for ordering: pair EMA → account EMA → undefined. */
 function effectiveLatency(a: AccountMeta, model: string | undefined): number | undefined {
     const pair =
@@ -320,6 +347,25 @@ function effectiveLatency(a: AccountMeta, model: string | undefined): number | u
     const base = pair ?? localLatencyEmaAccount.get(a.id);
     if (base === undefined) return undefined;
     return base * qualityPenalty(a.id);
+}
+
+/**
+ * Minimum observed time-to-first-chunk EMA across candidates for a model
+ * (raw EMA, no quality penalty — this is about timing expectations, not
+ * ranking). Used to calm hedging for slow-TTFB models. Undefined when no
+ * samples exist yet (discovery). Exported for unit tests.
+ */
+export function minTtfbEmaMs(candidates: AccountMeta[], model: string): number | undefined {
+    let min: number | undefined;
+    for (const a of candidates) {
+        const ema =
+            localLatencyEmaPair.get(latencyPairKey(a.id, model)) ??
+            localLatencyEmaAccount.get(a.id);
+        if (ema !== undefined && Number.isFinite(ema) && ema > 0) {
+            min = min === undefined ? ema : Math.min(min, ema);
+        }
+    }
+    return min;
 }
 
 /**
@@ -1103,6 +1149,15 @@ export async function executeCompletion(
                 stream: true
             }) as ChatCompletionRequest;
 
+        // Serialize-once cache: the translated upstream body is identical
+        // for every attempt of the same (provider type, upstream model) —
+        // only the model name varies per account, and same-type accounts
+        // share it. Serialize once and reuse the string across
+        // failover/hedge attempts via PRE_SERIALIZED_BODY instead of paying
+        // JSON.stringify per attempt on large prompts (1102 CPU budget on
+        // the Free plan). Keyed per model-candidate iteration; tiny.
+        const bodyTextCache = new Map<string, string>();
+
         // Bound worst-case subrequest burn: with N dead accounts the loop
         // below would otherwise try all of them, exhausting Cloudflare's
         // ~50-subrequest budget and killing the invocation. Cap actual
@@ -1128,7 +1183,20 @@ export async function executeCompletion(
         // (the slice above already bounds the pool, so the cap holds) and
         // fetches through the shared subrequest budget (a hedge is skipped
         // when the budget is exhausted — it would 503 immediately anyway).
-        const hedgeDelayMs = resolveHedgeDelayMs(env);
+        const baseHedgeDelayMs = resolveHedgeDelayMs(env);
+        // Adaptive hedge delay for slow-TTFB models. Reasoning models (e.g.
+        // Atria-Dawn-Preview) with large prompts routinely take longer than
+        // the static 2s delay to emit their first byte — hedging then fires
+        // on every request, duplicating the upstream fetch for zero benefit
+        // and burning 1102 CPU budget. Scale the delay with the model's
+        // observed TTFB EMA so the hedge only fires when the primary is
+        // slower than this model's usual. No samples yet → keep the
+        // configured delay (discovery). <= 0 still disables hedging.
+        const hedgeDelayMs = resolveEffectiveHedgeDelayMs(
+            baseHedgeDelayMs,
+            candidateOrdered,
+            currentModel
+        );
         const { pin: requestPin } = parseAccountPin(body.model);
         const hedgingOn = !requestPin && hedgeDelayMs > 0;
 
@@ -1173,15 +1241,33 @@ export async function executeCompletion(
             }
             const adapter = buildAdapter(acct);
             trackAttemptStart(acct.id);
+            const upstreamReq = candidateUpstreamReq(acct.id);
+            // Serialize-once: reuse the cached payload string when this
+            // adapter supports it (OpenAI-family executors). The executor
+            // reads PRE_SERIALIZED_BODY and skips its own JSON.stringify.
+            // Adapters without the hook are unaffected (per-attempt
+            // serialization as before).
+            if (adapter.serializeChatPayload) {
+                const cacheKey = acct.providerType + "\0" + String(upstreamReq.model);
+                let bodyText = bodyTextCache.get(cacheKey);
+                if (bodyText === undefined) {
+                    const serialized = adapter.serializeChatPayload(upstreamReq, true);
+                    if (serialized !== undefined) {
+                        bodyText = serialized;
+                        bodyTextCache.set(cacheKey, bodyText);
+                    }
+                }
+                if (bodyText !== undefined) {
+                    (upstreamReq as unknown as Record<symbol, unknown>)[PRE_SERIALIZED_BODY] =
+                        bodyText;
+                }
+            }
             // The shared subrequest budget bounds total fetches for this
             // request (retries included): fetchWithRetry consumes from it
             // and stops fetching at zero. Pinned single-account attempts
             // get their full try here — the budget starts full per request,
             // so the loop gate below can never block the first attempt.
-            const gen = adapter.chatCompletionStream(
-                candidateUpstreamReq(acct.id),
-                subrequestBudget
-            );
+            const gen = adapter.chatCompletionStream(upstreamReq, subrequestBudget);
             // Time-to-first-chunk for latency-aware routing (EMA per pair).
             return { account: acct, gen, attemptStart: Date.now() };
         };

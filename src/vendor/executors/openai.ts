@@ -17,6 +17,7 @@ import {
     type UpstreamErrorPayload
 } from "./base.js";
 import { fetchWithRetry } from "./retry.js";
+import { PRE_SERIALIZED_BODY } from "../types/provider.js";
 import { applyStealth, type StealthHeaders } from "../../providers/fingerprints.js";
 
 function stripProviderPrefix(model: string): string {
@@ -124,15 +125,49 @@ export class OpenAIExecutor implements AIProvider {
         }
     }
 
+    /**
+     * Build the exact serialized upstream payload for a chat request.
+     * Public so the router can serialize ONCE per request and reuse the
+     * string across failover/hedge attempts (via PRE_SERIALIZED_BODY)
+     * instead of paying JSON.stringify per attempt on large prompts.
+     */
+    serializeChatPayload(req: ChatCompletionRequest, stream: boolean): string {
+        const targetModel = stripProviderPrefix(req.model ?? "");
+        const payload = stream
+            ? {
+                  ...req,
+                  model: targetModel,
+                  stream: true,
+                  stream_options: {
+                      ...req.stream_options,
+                      include_usage: true
+                  }
+              }
+            : { ...req, model: targetModel, stream: false };
+        return JSON.stringify(payload);
+    }
+
+    /**
+     * Resolve the request body text: use the router's pre-serialized string
+     * when attached (serialize-once), otherwise translate+serialize here.
+     * The spread below copies the symbol onto the translated payload, so
+     * this must read the symbol BEFORE translating, never forward it.
+     */
+    private chatBodyText(req: ChatCompletionRequest, stream: boolean): string {
+        const pre = (req as unknown as Record<symbol, unknown>)[PRE_SERIALIZED_BODY];
+        if (typeof pre === "string") return pre;
+        return this.serializeChatPayload(req, stream);
+    }
+
     async chatCompletion(
         req: ChatCompletionRequest,
         budget?: RequestAttemptBudget
     ): Promise<ChatCompletionResponse> {
-        const targetModel = stripProviderPrefix(req.model ?? "");
+        const bodyText = this.chatBodyText(req, false);
 
         const res = await fetchWithRetry(
             `${this.baseUrl}/chat/completions`,
-            { ...req, model: targetModel, stream: false },
+            bodyText,
             this.getHeaders(),
             3,
             budget
@@ -150,19 +185,11 @@ export class OpenAIExecutor implements AIProvider {
         req: ChatCompletionRequest,
         budget?: RequestAttemptBudget
     ): AsyncGenerator<ChatCompletionChunk, void, void> {
-        const targetModel = stripProviderPrefix(req.model ?? "");
+        const bodyText = this.chatBodyText(req, true);
 
         const res = await fetchWithRetry(
             `${this.baseUrl}/chat/completions`,
-            {
-                ...req,
-                model: targetModel,
-                stream: true,
-                stream_options: {
-                    ...req.stream_options,
-                    include_usage: true
-                }
-            },
+            bodyText,
             this.getHeaders("text/event-stream, application/json, */*"),
             3,
             budget

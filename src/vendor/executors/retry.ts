@@ -120,14 +120,16 @@ export async function computeRetryDelay(
  */
 export async function fetchWithRetry(
     url: string,
-    body: Record<string, unknown>,
+    body: Record<string, unknown> | string,
     headers: Record<string, string>,
     maxAttempts = 3,
     budget?: RequestAttemptBudget
 ): Promise<Response> {
     let lastResponse: Response | undefined;
-    // Serialize once: the body never changes between attempts.
-    const bodyText = JSON.stringify(body);
+    // Serialize once: the body never changes between attempts. Callers may
+    // pass a pre-serialized string (serialize-once across failover attempts)
+    // to skip JSON.stringify entirely.
+    const bodyText = typeof body === "string" ? body : JSON.stringify(body);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (budget && budget.remaining <= 0) {
             return (
