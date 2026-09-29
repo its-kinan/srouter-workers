@@ -1,1 +1,0 @@
-import{px as c}from"./sr-DBadJQfMlJEZ.js";function e(r,n){return n.max===n.min?0:r/(n.max-n.min)*100}const f={correct:(r,n)=>{if(!n.target)return r;if(typeof r=="string")if(c.test(r))r=parseFloat(r);else return r;const o=e(r,n.target.x),t=e(r,n.target.y);return`${o}% ${t}%`}};export{f as correctBorderRadius,e as pixelsToPercent};

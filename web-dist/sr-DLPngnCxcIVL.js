@@ -1,1 +1,0 @@
-import{time as o}from"./sr-BEGhKJX-ADwG.js";import{cancelFrame as a,frame as s,frameData as e}from"./sr-Bb_f7HUDDFq8.js";const n=m=>{const t=({timestamp:r})=>m(r);return{start:(r=!0)=>s.update(t,r),stop:()=>a(t),now:()=>e.isProcessing?e.timestamp:o.now()}};export{n as frameloopDriver};

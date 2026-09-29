@@ -305,7 +305,31 @@ interface AccountCacheEntry {
 const accountCaches = new Map<string, AccountCacheEntry>();
 const accountCacheInflight = new Map<string, Promise<DecryptedAccount[]>>();
 
+/** Lightweight hit/miss counters for cache observability (exposed via /health). */
+export const accountCacheStats = { hits: 0, misses: 0 };
+
+/**
+ * Drop all isolate-local registry caches (tests only). Production isolates
+ * never call this — the TTLs handle freshness.
+ */
+export function resetRegistryCachesForTests(): void {
+    accountCaches.clear();
+    accountCacheInflight.clear();
+    cachedVersion = null;
+}
+
+// The version aggregation is the cheapest preamble read, but it was still a
+// D1 round-trip on every loadAccounts() call — including cache hits. Throttle
+// it to ~5s per isolate: worst case, a providers-table change takes ≤5s longer
+// to be noticed (on top of the 60s account TTL).
+const VERSION_CHECK_TTL_MS = 5_000;
+let cachedVersion: { version: string; fetchedAt: number } | null = null;
+
 async function providersVersion(db: D1Database): Promise<string> {
+    const now = Date.now();
+    if (cachedVersion && now - cachedVersion.fetchedAt < VERSION_CHECK_TTL_MS) {
+        return cachedVersion.version;
+    }
     const row = await db
         .prepare(
             `SELECT COUNT(*) AS n,
@@ -314,7 +338,9 @@ async function providersVersion(db: D1Database): Promise<string> {
              FROM providers`
         )
         .first<{ n: number; e: number; c: number }>();
-    return `${row?.n ?? 0}:${row?.e ?? 0}:${row?.c ?? 0}`;
+    const version = `${row?.n ?? 0}:${row?.e ?? 0}:${row?.c ?? 0}`;
+    cachedVersion = { version, fetchedAt: now };
+    return version;
 }
 
 async function readAndDecryptAll(
@@ -346,13 +372,26 @@ async function decryptRows(
     rows: ProviderRow[],
     masterKeyB64: string
 ): Promise<DecryptedAccount[]> {
+    // Chunked parallel decrypt: the old sequential await decrypted ~342 rows
+    // one-by-one on cold start. 24-way concurrency cuts wall-clock time
+    // without spiking isolate memory with 342 concurrent subtle ops.
+    const CONCURRENCY = 24;
     const accounts: DecryptedAccount[] = [];
-    for (const row of rows) {
-        try {
-            accounts.push(await decryptAccount(row, masterKeyB64));
-        } catch {
-            // A corrupt envelope must not take down routing for healthy accounts.
-            console.error(`Skipping account ${row.id}: failed to decrypt secrets`);
+    for (let i = 0; i < rows.length; i += CONCURRENCY) {
+        const chunk = rows.slice(i, i + CONCURRENCY);
+        const decrypted = await Promise.all(
+            chunk.map(async (row): Promise<DecryptedAccount | null> => {
+                try {
+                    return await decryptAccount(row, masterKeyB64);
+                } catch {
+                    // A corrupt envelope must not take down routing for healthy accounts.
+                    console.error(`Skipping account ${row.id}: failed to decrypt secrets`);
+                    return null;
+                }
+            })
+        );
+        for (const account of decrypted) {
+            if (account) accounts.push(account);
         }
     }
     return accounts;
@@ -371,11 +410,15 @@ export async function loadAccounts(
     if (cached && now - cached.loadedAt < ACCOUNT_CACHE_TTL_MS) {
         // One cheap aggregation decides freshness; on match the 342
         // decryptions are skipped entirely.
+        // B3: the version check itself is throttled (~5s) below, so a warm
+        // isolate does ~zero D1 reads here, not one.
         if ((await providersVersion(db)) === cached.version) {
             cached.loadedAt = now; // extend the TTL while the table is quiet
+            accountCacheStats.hits++;
             return cached.accounts;
         }
     }
+    accountCacheStats.misses++;
 
     // Single-flight the reload so a cold isolate under burst doesn't
     // decrypt the table N times concurrently.

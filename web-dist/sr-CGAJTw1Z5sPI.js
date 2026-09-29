@@ -1,1 +1,0 @@
-import{calcGeneratorDuration as i,maxGeneratorDuration as m}from"./sr-B-9ZpOsmaIo5.js";import{millisecondsToSeconds as s}from"./sr-Dn12LHp64Rk3.js";function f(n,r=100,o){const e=o({...n,keyframes:[0,r]}),t=Math.min(i(e),m);return{type:"keyframes",ease:a=>e.next(t*a).value/r,duration:s(t)}}export{f as createGeneratorEasing};

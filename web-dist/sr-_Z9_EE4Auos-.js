@@ -1,1 +1,0 @@
-import{complex as e}from"./sr-DuslXiQiYNkO.js";const n=(r,t)=>t==="zIndex"?!1:!!(typeof r=="number"||Array.isArray(r)||typeof r=="string"&&(e.test(r)||r==="0")&&!r.startsWith("url("));export{n as isAnimatable};

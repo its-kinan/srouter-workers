@@ -1,1 +1,0 @@
-const e=new Set(["BUTTON","INPUT","SELECT","TEXTAREA","A"]);function s(t){return e.has(t.tagName)||t.isContentEditable===!0}const n=new Set(["INPUT","SELECT","TEXTAREA"]);function E(t){return n.has(t.tagName)||t.isContentEditable===!0}export{s as isElementKeyboardAccessible,E as isElementTextInput};

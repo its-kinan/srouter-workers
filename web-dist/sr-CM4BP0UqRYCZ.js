@@ -1,1 +1,0 @@
-const n=t=>Math.round(t*1e5)/1e5;export{n as sanitize};

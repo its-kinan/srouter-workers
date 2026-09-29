@@ -1,1 +1,0 @@
-import{useMatch as s}from"./sr-B6Xom051h3FE.js";function c(r){return s({from:r.from,shouldThrow:r.shouldThrow,structuralSharing:r.structuralSharing,strict:r.strict,select:t=>{const a=r.strict===!1?t.params:t._strictParams;return r.select?r.select(a):a}})}export{c as useParams};

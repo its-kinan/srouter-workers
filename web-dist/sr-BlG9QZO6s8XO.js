@@ -1,1 +1,0 @@
-import{isWillChangeMotionValue as o}from"./sr-Ca3nrnsmRrgC.js";import{MotionGlobalConfig as i}from"./sr-pfzlwddINm0y.js";function C(a,n){const l=a.getValue("willChange");if(o(l))return l.add(n);if(!l&&i.WillChange){const e=new i.WillChange("auto");a.addValue("willChange",e),e.add(n)}}export{C as addValueToWillChange};

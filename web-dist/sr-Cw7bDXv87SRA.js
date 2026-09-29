@@ -1,1 +1,0 @@
-import{r as l}from"./sr-BaQ6fH3cvQLq.js";import{useStableCallback as m}from"./sr-mORIqjeswCm7.js";import{useAnimationsFinished as p}from"./sr-BKisTGUftooS.js";function C(i){const{enabled:e=!0,open:o,ref:s,onComplete:a}=i,n=m(a),t=p(s,o);l.useEffect(()=>{if(!e)return;const r=new AbortController;return t(n,r.signal),()=>{r.abort()}},[e,o,n,t])}export{C as useOpenChangeComplete};

@@ -13,6 +13,7 @@
 //
 //   POST /route   { accounts: [{id, base}] } -> { orderedIds: string[] }
 //   POST /report  { accountId, ok, error?, retryAfterMs? } -> { ok: true }
+//   POST /usage   { keyId, tokens, cost } -> accumulates usage deltas, flushes ~30s
 //   GET  /health  -> { states: Record<accountId, CircuitView> }
 //   POST /models  { models } -> caches aggregated model list
 //   GET  /models  -> { models, cachedAt } | { models: null }
@@ -21,6 +22,9 @@
 
 import type { Env } from "../env.js";
 import type { ModelObject } from "../vendor/types/index.js";
+
+/** Batched usage flush cadence: POST /usage deltas land in D1 this often. */
+const USAGE_FLUSH_INTERVAL_MS = 30_000;
 
 export interface AccountRef {
     id: string;
@@ -94,12 +98,24 @@ const emptyState = (): PersistedState => ({
 
 export class RouterState {
     private ctx: DurableObjectState;
+    private env: Env;
     private state: PersistedState = emptyState();
     private loaded = false;
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-    constructor(ctx: DurableObjectState, _env: Env) {
+    /**
+     * Batched virtual-key usage deltas: { keyId: { tokens, cost } }.
+     * POST /usage accumulates here in memory; the DO alarm flushes to D1
+     * (~30s). In-memory only by design (persisting per-request would defeat
+     * the batching). Tradeoff: deltas are lost if the DO instance is evicted
+     * before the alarm fires, and quota/credit reads lag up to ~30s.
+     */
+    private usageDeltas = new Map<string, { tokens: number; cost: number }>();
+    private usageAlarmScheduled = false;
+
+    constructor(ctx: DurableObjectState, env: Env) {
         this.ctx = ctx;
+        this.env = env;
     }
 
     private async load(): Promise<void> {
@@ -139,6 +155,63 @@ export class RouterState {
         } else {
             // Unit-test stub has no waitUntil; a plain timer suffices.
             this.saveTimer = setTimeout(fire, REPORT_SAVE_DEBOUNCE_MS);
+        }
+    }
+
+    /** Schedule the recurring usage-flush alarm (idempotent). */
+    private scheduleUsageFlush(): void {
+        if (this.usageAlarmScheduled) return;
+        this.usageAlarmScheduled = true;
+        // setAlarm may not exist on the unit-test stub; fall back to a timer.
+        const storage = this.ctx.storage as DurableObjectStorage & {
+            setAlarm?: (t: number) => Promise<void>;
+        };
+        if (typeof storage.setAlarm === "function") {
+            void storage.setAlarm(Date.now() + USAGE_FLUSH_INTERVAL_MS);
+        } else {
+            setTimeout(() => void this.alarm(), USAGE_FLUSH_INTERVAL_MS);
+        }
+    }
+
+    /**
+     * Flush accumulated usage deltas to D1 in one batch. Increments arriving
+     * while the flush runs are kept in the map (we swap the map before
+     * writing, so nothing is lost or double-counted).
+     */
+    private async flushUsage(): Promise<void> {
+        if (this.usageDeltas.size === 0) return;
+        const batch = this.usageDeltas;
+        this.usageDeltas = new Map();
+        try {
+            const stmts = [...batch.entries()].map(([keyId, d]) =>
+                this.env.DB.prepare(
+                    `UPDATE api_keys
+                     SET usage_tokens = usage_tokens + ?,
+                         usage_cost = usage_cost + ?
+                     WHERE id = ?`
+                ).bind(d.tokens, d.cost, keyId)
+            );
+            await this.env.DB.batch(stmts);
+        } catch (err) {
+            // Re-queue on failure so usage isn't silently dropped; the next
+            // alarm will retry.
+            for (const [keyId, d] of batch) {
+                const cur = this.usageDeltas.get(keyId) ?? { tokens: 0, cost: 0 };
+                cur.tokens += d.tokens;
+                cur.cost += d.cost;
+                this.usageDeltas.set(keyId, cur);
+            }
+            console.error("usage flush failed, re-queued", err);
+        }
+    }
+
+    async alarm(): Promise<void> {
+        await this.flushUsage();
+        // Keep the alarm recurring while there's work; a fresh POST /usage
+        // re-arms it. This avoids an eternal alarm on an idle DO.
+        this.usageAlarmScheduled = false;
+        if (this.usageDeltas.size > 0) {
+            this.scheduleUsageFlush();
         }
     }
 
@@ -235,6 +308,26 @@ export class RouterState {
                     retryAfterMs?: number;
                 };
                 await this.report(body.accountId, body.ok, body.error, body.retryAfterMs);
+                return json({ ok: true });
+            }
+            if (request.method === "POST" && url.pathname === "/usage") {
+                // Batched virtual-key usage accounting. The worker POSTs one
+                // delta per completed request (fire-and-forget); deltas
+                // accumulate in memory and flush to D1 on the ~30s alarm.
+                // This replaces the old per-request `UPDATE api_keys`, which
+                // was a serialized D1 write on the hot path.
+                const body = (await request.json()) as {
+                    keyId?: string;
+                    tokens?: number;
+                    cost?: number;
+                };
+                if (typeof body.keyId === "string" && body.keyId) {
+                    const cur = this.usageDeltas.get(body.keyId) ?? { tokens: 0, cost: 0 };
+                    cur.tokens += typeof body.tokens === "number" ? body.tokens : 0;
+                    cur.cost += typeof body.cost === "number" ? body.cost : 0;
+                    this.usageDeltas.set(body.keyId, cur);
+                    this.scheduleUsageFlush();
+                }
                 return json({ ok: true });
             }
             if (request.method === "GET" && url.pathname === "/health") {

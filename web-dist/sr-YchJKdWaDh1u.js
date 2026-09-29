@@ -1,1 +1,0 @@
-import{memoSupports as e}from"./sr-C7l4ZWreXlhJ.js";const a=e(()=>{try{document.createElement("div").animate({opacity:0},{easing:"linear(0, 1)"})}catch{return!1}return!0},"linearEasing");export{a as supportsLinearEasing};

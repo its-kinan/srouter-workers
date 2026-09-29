@@ -1,1 +1,0 @@
-var o;(function(r){r.errToObj=t=>typeof t=="string"?{message:t}:t||{},r.toString=t=>typeof t=="string"?t:t==null?void 0:t.message})(o||(o={}));export{o as errorUtil};

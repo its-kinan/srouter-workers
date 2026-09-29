@@ -1,1 +1,0 @@
-const s=e=>({test:t=>typeof t=="string"&&t.endsWith(e)&&t.split(" ").length===1,parse:parseFloat,transform:t=>`${t}${e}`}),n=s("deg"),r=s("%"),o=s("px"),p=s("vh"),a=s("vw"),c={...r,parse:e=>r.parse(e)/100,transform:e=>r.transform(e*100)};export{n as degrees,r as percent,c as progressPercentage,o as px,p as vh,a as vw};

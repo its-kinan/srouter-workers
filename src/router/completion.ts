@@ -97,6 +97,21 @@ export type CompletionOutcome =
           accountId: string;
       };
 
+export type RequestLogMode = "none" | "all" | "errors";
+
+/**
+ * Decide the request_logs write mode from env:
+ * - SROUTER_DISABLE_REQUEST_LOGS=1 → "none" (no writes at all).
+ * - SROUTER_LOG_ALL_REQUESTS=1 → "all" (log every completed request).
+ * - Default → "errors" (log only terminal 4xx/5xx failures, skip successes).
+ * The table holds metadata only — never prompt/response content.
+ */
+export function resolveRequestLogMode(env: Env): RequestLogMode {
+    if (env.SROUTER_DISABLE_REQUEST_LOGS === "1") return "none";
+    if (env.SROUTER_LOG_ALL_REQUESTS === "1") return "all";
+    return "errors";
+}
+
 function routerShard(env: Env, providerType: string): DurableObjectStub {
     return env.ROUTER_STATE.getByName(routerShardName(providerType));
 }
@@ -253,7 +268,8 @@ async function resolveModel(
 interface UsageTally {
     promptTokens: number;
     completionTokens: number;
-    completionText: string;
+    /** Completion text chunks; joined once when estimating tokens (avoids O(n²) concat). */
+    completionParts: string[];
 }
 
 function tallyChunk(tally: UsageTally, chunk: ChatCompletionChunk): void {
@@ -264,7 +280,7 @@ function tallyChunk(tally: UsageTally, chunk: ChatCompletionChunk): void {
         }
     }
     const delta = chunk.choices?.[0]?.delta?.content;
-    if (typeof delta === "string") tally.completionText += delta;
+    if (typeof delta === "string") tally.completionParts.push(delta);
 }
 
 export async function executeCompletion(
@@ -291,6 +307,95 @@ export async function executeCompletion(
     // stale-while-revalidate (fetched once per request, never inline fan-out).
     const catalog = await getModelCatalog(env, executionCtx);
 
+    /**
+     * Request logging mode for the `request_logs` table:
+     * - "none":   SROUTER_DISABLE_REQUEST_LOGS=1 → no request_logs writes at all.
+     * - "all":    SROUTER_LOG_ALL_REQUESTS=1 → log every completed request.
+     * - "errors": default → log only terminal failures (4xx/5xx), skip successes.
+     * The table holds metadata only (token counts, latency, model, status,
+     * cost estimate) — never prompt/response content.
+     */
+    const requestLogMode = resolveRequestLogMode(env);
+
+    /** Write one request_logs row. Only call when requestLogMode permits it. */
+    async function writeRequestLog(row: {
+        providerId: string;
+        accountId: string | null;
+        model: string;
+        promptTokens: number;
+        completionTokens: number;
+        statusCode: number;
+        latencyMs: number;
+        cost: number;
+        resolvedModel: string;
+        fallbackOccurred: boolean;
+        fallbackPath: string | null;
+        fallbackReason: string | null;
+    }): Promise<void> {
+        await env.DB.prepare(
+            `INSERT INTO request_logs
+             (id, api_key_id, ip_address, user_agent, provider_id, account_id, model,
+              prompt_tokens, completion_tokens, total_tokens, status_code, latency_ms,
+              estimated_cost, resolved_model, fallback_occurred, fallback_path,
+              fallback_reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+            .bind(
+                crypto.randomUUID(),
+                apiKeyRow?.id ?? null,
+                ip,
+                userAgent,
+                row.providerId,
+                row.accountId,
+                row.model,
+                row.promptTokens,
+                row.completionTokens,
+                row.promptTokens + row.completionTokens,
+                row.statusCode,
+                row.latencyMs,
+                row.cost,
+                row.resolvedModel,
+                row.fallbackOccurred ? 1 : 0,
+                row.fallbackPath,
+                row.fallbackReason,
+                Date.now()
+            )
+            .run();
+    }
+
+    /** Log a terminally failed request (4xx/5xx). No token usage to record. */
+    function logTerminalError(
+        status: number,
+        message: string,
+        tracker: AttemptTracker,
+        model: string
+    ): void {
+        if (requestLogMode === "none") return;
+        // "errors" (default) and "all" both log terminal failures.
+        executionCtx.waitUntil(
+            (async () => {
+                try {
+                    await writeRequestLog({
+                        providerId: "",
+                        accountId: null,
+                        model,
+                        promptTokens: 0,
+                        completionTokens: 0,
+                        statusCode: status,
+                        latencyMs: Date.now() - startedAt,
+                        cost: 0,
+                        resolvedModel: model,
+                        fallbackOccurred: tracker.fallbackOccurred,
+                        fallbackPath: tracker.fallbackPath.join(" -> "),
+                        fallbackReason: message.slice(0, 500)
+                    });
+                } catch (err) {
+                    console.error("request log write failed", err);
+                }
+            })()
+        );
+    }
+
     const logAttempt = (
         candidateResolved: ResolvedModel,
         account: DecryptedAccount,
@@ -306,8 +411,9 @@ export async function executeCompletion(
                     if (!promptTokens) {
                         promptTokens = estimateTokens(JSON.stringify(body.messages));
                     }
-                    if (!completionTokens && tally.completionText) {
-                        completionTokens = estimateTokens(tally.completionText);
+                    const completionText = tally.completionParts.join("");
+                    if (!completionTokens && completionText) {
+                        completionTokens = estimateTokens(completionText);
                     }
                     const totalTokens = promptTokens + completionTokens;
                     const cost = calculateCostFromTokens(
@@ -316,42 +422,53 @@ export async function executeCompletion(
                     );
                     const latencyMs = Date.now() - startedAt;
                     try {
-                        await env.DB.prepare(
-                            `INSERT INTO request_logs
-                             (id, api_key_id, ip_address, user_agent, provider_id, account_id, model,
-                              prompt_tokens, completion_tokens, total_tokens, status_code, latency_ms,
-                              estimated_cost, resolved_model, fallback_occurred, fallback_path,
-                              fallback_reason, created_at)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 200, ?, ?, ?, ?, ?, ?, ?)`
-                        )
-                            .bind(
-                                crypto.randomUUID(),
-                                apiKeyRow?.id ?? null,
-                                ip,
-                                userAgent,
-                                account.providerType,
-                                account.id,
-                                currentModel,
+                        // Success rows are only logged when full logging is
+                        // enabled (SROUTER_LOG_ALL_REQUESTS=1). Default mode
+                        // logs terminal errors only; SROUTER_DISABLE_REQUEST_LOGS=1
+                        // disables request_logs writes entirely.
+                        if (requestLogMode === "all") {
+                            await writeRequestLog({
+                                providerId: account.providerType,
+                                accountId: account.id,
+                                model: currentModel,
                                 promptTokens,
                                 completionTokens,
-                                totalTokens,
+                                statusCode: 200,
                                 latencyMs,
                                 cost,
-                                candidateResolved.upstreamByAccount.get(account.id) ?? currentModel,
-                                tracker.fallbackOccurred ? 1 : 0,
-                                tracker.fallbackOccurred ? tracker.fallbackPath.join(" -> ") : null,
-                                tracker.fallbackReason ?? null,
-                                Date.now()
-                            )
-                            .run();
+                                resolvedModel:
+                                    candidateResolved.upstreamByAccount.get(account.id) ??
+                                    currentModel,
+                                fallbackOccurred: tracker.fallbackOccurred,
+                                fallbackPath: tracker.fallbackOccurred
+                                    ? tracker.fallbackPath.join(" -> ")
+                                    : null,
+                                fallbackReason: tracker.fallbackReason ?? null
+                            });
+                        }
                         if (apiKeyRow) {
-                            await env.DB.prepare(
-                                `UPDATE api_keys
-                                 SET usage_tokens = usage_tokens + ?, usage_cost = usage_cost + ?
-                                 WHERE id = ?`
-                            )
-                                .bind(totalTokens, cost, apiKeyRow.id)
-                                .run();
+                            // Batched usage accounting: deltas accumulate in the
+                            // provider's RouterState DO shard and flush to D1
+                            // every ~30s (see durable.ts /usage). Tradeoff:
+                            // quota/credit reads may lag actual usage by up to
+                            // ~30s, and deltas are lost if a DO instance is
+                            // evicted before flushing. Previously this was a
+                            // synchronous D1 UPDATE per request.
+                            await routerShard(env, account.providerType)
+                                .fetch(
+                                    new Request("https://do/usage", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                            keyId: apiKeyRow.id,
+                                            tokens: totalTokens,
+                                            cost
+                                        })
+                                    })
+                                )
+                                .catch(() => {
+                                    // Usage accounting must never fail the request.
+                                });
                         }
                     } catch (err) {
                         console.error("request log write failed", err);
@@ -450,7 +567,7 @@ export async function executeCompletion(
                 tracker.fallbackPath.push(currentModel);
             }
 
-            const tally: UsageTally = { promptTokens: 0, completionTokens: 0, completionText: "" };
+            const tally: UsageTally = { promptTokens: 0, completionTokens: 0, completionParts: [] };
             let resolveConsumed!: () => void;
             const consumed = new Promise<void>((resolve) => {
                 resolveConsumed = resolve;
@@ -472,6 +589,19 @@ export async function executeCompletion(
 
             const depth = input.depth ?? 0;
             const searchOpts = searchOptionsFromEnv(env);
+            // Interception needs a configured search backend to do anything
+            // useful. Without one, buffering the whole stream just to assemble
+            // tool calls is pure memory overhead on the 128MB isolate — skip
+            // it and pass chunks straight through. (Note: performWebSearch has
+            // a keyless Wikipedia fallback; bypassing here intentionally
+            // disables that too — a silent Wikipedia "search" is not what
+            // callers expect from web-search interception.)
+            const searchBackendConfigured = !!(
+                searchOpts.braveApiKey ||
+                searchOpts.tavilyApiKey ||
+                searchOpts.serperApiKey ||
+                searchOpts.searxngUrl
+            );
 
             if (body.stream === false || body.stream === undefined) {
                 const chunks: ChatCompletionChunk[] = [];
@@ -487,6 +617,7 @@ export async function executeCompletion(
                 const toolCalls = response.choices?.[0]?.message?.tool_calls;
                 if (
                     depth < MAX_INTERCEPT_DEPTH &&
+                    searchBackendConfigured &&
                     Array.isArray(toolCalls) &&
                     toolCalls.length > 0 &&
                     hasInterceptableSearchCall(
@@ -615,12 +746,13 @@ export async function executeCompletion(
                 }
             }
 
-            // When interception is impossible (max depth reached), stream chunks
-            // straight through instead of buffering the whole response.
-            // Buffering exists only to assemble tool calls for interception;
-            // at max depth the intercept branch can never trigger, so
-            // interceptingStream() would just replay committed() verbatim.
-            const canIntercept = (input.depth ?? 0) < MAX_INTERCEPT_DEPTH;
+            // When interception is impossible (max depth reached, or no search
+            // backend configured), stream chunks straight through instead of
+            // buffering the whole response. Buffering exists only to assemble
+            // tool calls for interception; when the intercept branch can never
+            // trigger, interceptingStream() would just replay committed()
+            // verbatim — at O(response) memory cost on the 128MB isolate.
+            const canIntercept = (input.depth ?? 0) < MAX_INTERCEPT_DEPTH && searchBackendConfigured;
             return {
                 kind: "stream",
                 chunks: canIntercept ? interceptingStream() : committed(),
@@ -629,6 +761,13 @@ export async function executeCompletion(
             };
         }
     }
+
+    // Terminal failure: all candidates/accounts exhausted (or model unknown).
+    // In "errors" (default) and "all" modes, log one error row for
+    // investigation. Per-attempt failover failures are already tracked in the
+    // DO circuit breaker via reportLater(); only the terminal outcome is logged
+    // here to avoid a D1 write per failed attempt during outages.
+    logTerminalError(lastStatus, lastErrorMsg, tracker, body.model);
 
     return {
         kind: "error",

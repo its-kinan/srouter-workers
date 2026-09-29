@@ -1,1 +1,0 @@
-const e={passive:!1},t={capture:!0,passive:!1};function o(a){a.stopImmediatePropagation()}function n(a){a.preventDefault(),a.stopImmediatePropagation()}export{n as default,e as nonpassive,t as nonpassivecapture,o as nopropagation};

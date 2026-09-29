@@ -1,1 +1,0 @@
-import{useRouter as n}from"./sr-DZyvhZ8fViRi.js";import{r as c}from"./sr-BaQ6fH3cvQLq.js";function g(r){const o=n();return c.useCallback(m=>o.navigate({...m,from:m.from??(r==null?void 0:r.from)}),[r==null?void 0:r.from,o])}export{g as useNavigate};

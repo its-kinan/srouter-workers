@@ -26,6 +26,19 @@ export interface Env {
     CODEX_OAUTH_REDIRECT_URI?: string;
     /** Comma-separated list of allowed CORS origins (loopback always allowed). */
     SROUTER_CORS_ORIGINS?: string;
+    /**
+     * Request-logging mode for the `request_logs` table:
+     * - SROUTER_DISABLE_REQUEST_LOGS=1 → no request_logs writes at all.
+     * - SROUTER_LOG_ALL_REQUESTS=1 → log every completed request (success + errors).
+     * - Default (neither set) → log terminal errors only (4xx/5xx), skip successes.
+     * The table holds metadata only (token counts, latency, model, status,
+     * cost estimate) — never prompt/response content. The /v1/logs/*
+     * dashboard endpoints keep working regardless. Usage accounting for
+     * virtual keys is unaffected (batched separately via the RouterState DO).
+     */
+    SROUTER_DISABLE_REQUEST_LOGS?: string;
+    /** Set to "1" to restore full request logging (successes + errors). */
+    SROUTER_LOG_ALL_REQUESTS?: string;
     /** Web search API keys for server-side search tool interception. Optional Worker secrets. */
     BRAVE_API_KEY?: string;
     TAVILY_API_KEY?: string;

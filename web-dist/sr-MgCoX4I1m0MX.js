@@ -1,1 +1,0 @@
-import{useQuery as e}from"./sr-C95jfZWDmN-a.js";import{api as r}from"./sr-YQhrtj25hSAW.js";function o(){return e({queryKey:["pricing","models"],queryFn:()=>r.get("/v1/pricing/models"),staleTime:1e3*60*60,gcTime:1e3*60*60*24,refetchOnWindowFocus:!1,refetchOnReconnect:!1,refetchOnMount:!1})}export{o as usePricing};

@@ -1,1 +1,0 @@
-import{r as o}from"./sr-BaQ6fH3cvQLq.js";import{updateOptions as p}from"./sr-B92AAjDRNsiS.js";import{useAppDispatch as e}from"./sr-DOIGHjJMcPRw.js";function f(r){var t=e();return o.useEffect(()=>{t(p(r))},[t,r]),null}export{f as ReportChartProps};

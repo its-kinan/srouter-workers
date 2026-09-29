@@ -1,1 +1,0 @@
-import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{NOOP as e}from"./sr-DuCe-TBEUl3O.js";const r=t.createContext({controlId:void 0,registerControlId:e,labelId:void 0,setLabelId:e,messageIds:[],setMessageIds:e,getDescriptionProps:o=>o});function n(){return t.useContext(r)}export{r as LabelableContext,n as useLabelableContext};

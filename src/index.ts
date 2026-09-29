@@ -48,7 +48,7 @@ import { oauthRoutes } from "./routes/v1/oauth.js";
 import { tunnelRoutes } from "./routes/v1/tunnel.js";
 import { databaseRoutes } from "./routes/v1/database.js";
 import { RouterState } from "./router/durable.js";
-import { decryptAccount, type ProviderRow } from "./providers/registry.js";
+import { accountCacheStats, decryptAccount, type ProviderRow } from "./providers/registry.js";
 import { refreshOAuthTokens } from "./providers/oauth-refresh.js";
 import { refreshCatalogIfStale } from "./router/catalog.js";
 import { DASHBOARD_HTML } from "./dashboard-html.js";
@@ -90,7 +90,14 @@ app.use("/v1/auth/*", (c, next) => csrfFor(c.env.SROUTER_CORS_ORIGINS)(c, next))
 // Reject oversized bodies before they are buffered into memory.
 app.use(createBodyLimitMiddleware());
 
-app.get("/health", (c) => c.json({ ok: true, service: "srouter-workers" }));
+app.get("/health", (c) =>
+    c.json({
+        ok: true,
+        service: "srouter-workers",
+        // Per-isolate account-cache observability (resets per isolate).
+        accountCache: { ...accountCacheStats }
+    })
+);
 
 app.route("/v1", chatRoutes);
 app.route("/v1", modelsRoutes);

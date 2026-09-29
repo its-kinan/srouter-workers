@@ -1,1 +1,0 @@
-import{selectChartLayout as i}from"./sr-Bl3iAstLy0Ju.js";var a=t=>{var r=i(t);return r==="horizontal"?"xAxis":r==="vertical"?"yAxis":r==="centric"?"angleAxis":"radiusAxis"};export{a as selectTooltipAxisType};

@@ -1,1 +1,0 @@
-import{getWindow as l}from"./sr-Bbr3GK2gyugG.js";function y(t,e,{detail:i=0}={}){t.dispatchEvent(new(l(t)).PointerEvent("click",{bubbles:!0,cancelable:!0,composed:!0,detail:i,shiftKey:e.shiftKey,ctrlKey:e.ctrlKey,altKey:e.altKey,metaKey:e.metaKey}))}export{y as dispatchClickWithModifiers};

@@ -1,1 +1,0 @@
-const e="https://api.cline.bot/api/v1",t={id:"cline",name:"Cline",category:"oauth",protocol:"openai",base_url:e,web_url:"https://cline.bot",alias:"cline",requires_api_key:!0,requires_oauth:!0,supports_custom_url:!0,status_message:"Cline OAuth account missing"};export{e as CLINE_BASE_URL,t as CLINE_PROVIDER};

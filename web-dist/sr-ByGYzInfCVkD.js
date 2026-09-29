@@ -1,1 +1,0 @@
-import{animateMotionValue as m}from"./sr-v1EDx1if_f1w.js";import{motionValue as a}from"./sr-BFKa45HHjyZb.js";import{isMotionValue as r}from"./sr-BbIbbK3hx6Ih.js";function f(o,i,n){const t=r(o)?o:a(o);return t.start(m("",t,i,n)),t.animation}export{f as animateSingleValue};

@@ -1,1 +1,0 @@
-import l from"./sr-5SuiVBDSl9TZ.js";import u from"./sr-BPW3GK3jCSDG.js";function i(){return null}function c(n,t){var r=typeof n=="function"?n:l(n),e=t==null?i:typeof t=="function"?t:u(t);return this.select(function(){return this.insertBefore(r.apply(this,arguments),e.apply(this,arguments)||null)})}export{c as default};

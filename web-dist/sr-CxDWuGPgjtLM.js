@@ -1,1 +1,0 @@
-const e=r=>Array.isArray(r);export{e as isKeyframesTarget};

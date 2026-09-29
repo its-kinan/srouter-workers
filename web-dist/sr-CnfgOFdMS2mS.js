@@ -1,1 +1,0 @@
-import{lowerUserAgent as o}from"./sr-DNQXzITT6bAX.js";var e;const r=typeof CSS<"u"&&!!((e=CSS.supports)!=null&&e.call(CSS,"-webkit-backdrop-filter:none"));!r&&o.includes("firefox");!r&&o.includes("chrom");export{r as webkit};

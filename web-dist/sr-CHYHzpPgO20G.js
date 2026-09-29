@@ -1,1 +1,0 @@
-import{useMatch as e}from"./sr-B6Xom051h3FE.js";function u(r){return e({from:r.from,strict:r.strict,structuralSharing:r.structuralSharing,select:t=>r.select?r.select(t.loaderData):t.loaderData})}export{u as useLoaderData};

@@ -1,1 +1,0 @@
-function r(){const t=new Map;return{emit(e,a){var n;(n=t.get(e))==null||n.forEach(o=>o(a))},on(e,a){t.has(e)||t.set(e,new Set),t.get(e).add(a)},off(e,a){var n;(n=t.get(e))==null||n.delete(a)}}}export{r as createEventEmitter};

@@ -1,1 +1,0 @@
-function o(n){return typeof n=="function"&&"applyToOptions"in n}export{o as isGenerator};

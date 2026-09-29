@@ -105,6 +105,33 @@ export function shouldTriggerFallback(
 
 import { parseAccountPin } from "../providers/registry.js";
 
+// --- Isolate-local fallback-rules cache ---
+// resolveCandidates() ran `SELECT * FROM fallback_rules` on every request
+// (called from loadAccountsForModel before routing). Rules are
+// admin-configured and change rarely; a 60s isolate TTL eliminates this D1
+// read on the hot path. Worst case, a rule edit takes ≤60s to take effect.
+const FALLBACK_RULES_TTL_MS = 60_000;
+
+let cachedFallbackRules: { rules: FallbackRule[]; fetchedAt: number } | null = null;
+
+/** Drop the cached rules (tests, and admin edits via the dashboard). */
+export function invalidateFallbackRulesCache(): void {
+    cachedFallbackRules = null;
+}
+
+async function loadFallbackRules(db: D1Database): Promise<FallbackRule[]> {
+    const now = Date.now();
+    if (cachedFallbackRules && now - cachedFallbackRules.fetchedAt < FALLBACK_RULES_TTL_MS) {
+        return cachedFallbackRules.rules;
+    }
+    const rows = await db
+        .prepare("SELECT * FROM fallback_rules WHERE enabled = 1")
+        .all<FallbackRuleRow>();
+    const rules = (rows.results ?? []).map(toFallbackRule);
+    cachedFallbackRules = { rules, fetchedAt: now };
+    return rules;
+}
+
 /**
  * Find enabled fallback rules matching a source model, mirroring the original's
  * findMatchingFallbackRulesDB: exact match (score 1), "prefix/*" wildcard
@@ -119,10 +146,7 @@ export async function resolveCandidates(
     db: D1Database,
     originalModel: string
 ): Promise<CandidateModel[]> {
-    const rows = await db
-        .prepare("SELECT * FROM fallback_rules WHERE enabled = 1")
-        .all<FallbackRuleRow>();
-    const rules = (rows.results ?? []).map(toFallbackRule);
+    const rules = await loadFallbackRules(db);
 
     // Ignore the account-pin suffix when matching rules: a pinned request
     // ("antigravity/x#acc_1") should still trigger the same combos as the

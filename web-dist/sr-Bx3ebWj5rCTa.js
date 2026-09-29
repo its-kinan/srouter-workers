@@ -1,1 +1,0 @@
-import{cornerRadiusProps as r}from"./sr-DLkxIGTgQk1y.js";import{correctBorderRadius as o}from"./sr-CiLUHcUXtOP9.js";import{correctBoxShadow as t}from"./sr-C1pTR1f4O5sC.js";const a={borderRadius:{...o,applyTo:[...r]},borderTopLeftRadius:o,borderTopRightRadius:o,borderBottomLeftRadius:o,borderBottomRightRadius:o,boxShadow:t};export{a as scaleCorrectors};

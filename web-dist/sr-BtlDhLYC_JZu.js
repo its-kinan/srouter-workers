@@ -1,1 +1,0 @@
-const o=r=>r.pointerType==="mouse"?typeof r.button!="number"||r.button<=0:r.isPrimary!==!1;export{o as isPrimaryPointer};

@@ -1,1 +1,0 @@
-var i=4;function f(t){var n=arguments.length>1&&arguments[1]!==void 0?arguments[1]:i,e=10**n,r=Math.round(t*e)/e;return Object.is(r,-0)?0:r}function c(t){for(var n=arguments.length,e=new Array(n>1?n-1:0),r=1;r<n;r++)e[r-1]=arguments[r];return t.reduce((a,o,d)=>{var u=e[d-1];return typeof u=="string"?a+u+o:u!==void 0?a+f(u)+o:a+o},"")}export{f as round,c as roundTemplateLiteral};

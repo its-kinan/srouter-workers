@@ -1,6 +1,6 @@
 // Tests for account pinning ("provider/model#selector") —
 // src/providers/registry.ts pin helpers and fallback combo interaction.
-import { describe, it } from "node:test";
+import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
     accountMatchesPin,
@@ -8,8 +8,14 @@ import {
     parseAccountPin,
     stripRoutingPrefix
 } from "../src/providers/registry.js";
-import { resolveCandidates } from "../src/routing/fallback.js";
+import {
+    invalidateFallbackRulesCache,
+    resolveCandidates
+} from "../src/routing/fallback.js";
 import type { DecryptedAccount } from "../src/providers/types.js";
+
+// resolveCandidates caches rules per isolate; each test gets its own fakeDb.
+beforeEach(() => invalidateFallbackRulesCache());
 
 function account(over: Partial<DecryptedAccount> = {}): DecryptedAccount {
     return {

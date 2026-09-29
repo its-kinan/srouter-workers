@@ -1,1 +1,0 @@
-import{EMPTY_OBJECT as l}from"./sr-DuCe-TBEUl3O.js";function u(a,n,o,s){let e=!1,t=!1;const r=l;return{reason:a,event:n??new Event("base-ui"),cancel(){e=!0},allowPropagation(){t=!0},get isCanceled(){return e},get isPropagationAllowed(){return t},trigger:o,...r}}export{u as createChangeEventDetails};

@@ -14,6 +14,51 @@ import { verifyAdminSession, ADMIN_SESSION_COOKIE } from "../routes/admin.js";
 
 export type ApiKeyRow = ApiKeyContextRow;
 
+// --- Isolate-local virtual-key cache ---
+// apiKeyAuth() ran `SELECT * FROM api_keys WHERE key_hash = ?` on every
+// request. Virtual keys change rarely (admin-created), so a 30s isolate TTL
+// eliminates this D1 read on the hot path.
+//
+// Tradeoff (accepted): usage_cost/usage_tokens are bumped per request by the
+// batched usage writer, so a cached row can lag up to ~30s. Credit/quota
+// enforcement may therefore overshoot slightly within the window. For a
+// personal gateway this is fine; for strict billing use a shorter TTL.
+const API_KEY_CACHE_TTL_MS = 30_000;
+
+interface ApiKeyCacheEntry {
+    row: ApiKeyRow;
+    fetchedAt: number;
+}
+
+const apiKeyCache = new Map<string, ApiKeyCacheEntry>();
+
+/** Isolate-cached virtual-key lookup. Exported for tests. */
+export async function lookupApiKey(
+    db: D1Database,
+    keyHash: string
+): Promise<ApiKeyRow | null> {    const now = Date.now();
+    const cached = apiKeyCache.get(keyHash);
+    if (cached && now - cached.fetchedAt < API_KEY_CACHE_TTL_MS) {
+        return cached.row;
+    }
+    const row = await db
+        .prepare("SELECT * FROM api_keys WHERE key_hash = ?")
+        .bind(keyHash)
+        .first<ApiKeyRow>();
+    if (row) {
+        apiKeyCache.set(keyHash, { row, fetchedAt: now });
+    } else {
+        // Don't cache misses: a just-created key must authenticate immediately.
+        apiKeyCache.delete(keyHash);
+    }
+    return row;
+}
+
+/** Invalidate a cached key row (e.g. after admin edits). Exported for admin routes. */
+export function invalidateApiKeyCache(keyHash: string): void {
+    apiKeyCache.delete(keyHash);
+}
+
 export async function apiKeyAuth(c: Context<AppHonoEnv>, next: Next) {
     const env = c.env;
 
@@ -44,7 +89,7 @@ export async function apiKeyAuth(c: Context<AppHonoEnv>, next: Next) {
     }
 
     const keyHash = await sha256Hex(presented);
-    const row = await env.DB.prepare("SELECT * FROM api_keys WHERE key_hash = ?").bind(keyHash).first<ApiKeyRow>();
+    const row = await lookupApiKey(env.DB, keyHash);
 
     if (!row) {
         return c.json(

@@ -1,1 +1,0 @@
-const e={x:!1,y:!1};function i(){return e.x||e.y}export{i as isDragActive,e as isDragging};

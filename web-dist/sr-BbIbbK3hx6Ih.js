@@ -1,1 +1,0 @@
-const t=o=>!!(o&&o.getVelocity);export{t as isMotionValue};

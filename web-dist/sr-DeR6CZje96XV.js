@@ -1,1 +1,0 @@
-function a(r,d,n=!0){return r.filter(e=>e.parentId===d).flatMap(e=>{var t;return[...!n||(t=e.context)!=null&&t.open?[e]:[],...a(r,e.id,n)]})}function o(r,d){var e;let n=[],i=(e=r.find(t=>t.id===d))==null?void 0:e.parentId;for(;i;){const t=r.find(c=>c.id===i);i=t==null?void 0:t.parentId,t&&(n=n.concat(t))}return n}export{o as getNodeAncestors,a as getNodeChildren};

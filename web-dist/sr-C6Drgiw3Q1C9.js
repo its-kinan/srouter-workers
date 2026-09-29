@@ -1,1 +1,0 @@
-import{r}from"./sr-BaQ6fH3cvQLq.js";import{PresenceContext as c}from"./sr-Btl32zT1cn8f.js";function i(e=!0){const o=r.useContext(c);if(o===null)return[!0,null];const{isPresent:s,onExitComplete:t,register:u}=o,n=r.useId();r.useEffect(()=>{if(e)return u(n)},[e]);const f=r.useCallback(()=>e&&t&&t(n),[n,t,e]);return!s&&t?[!1,f]:[!0]}export{i as usePresence};

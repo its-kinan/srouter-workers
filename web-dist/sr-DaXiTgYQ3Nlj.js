@@ -1,1 +1,0 @@
-import{useQuery as t}from"./sr-C95jfZWDmN-a.js";import{api as r}from"./sr-YQhrtj25hSAW.js";function a(e=!1){return t({queryKey:["quota",{forceRefresh:e}],queryFn:()=>r.get(e?"/v1/quota?force=true":"/v1/quota"),staleTime:6e4,gcTime:3e5,refetchInterval:6e4})}export{a as useQuota};

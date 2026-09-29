@@ -1,1 +1,0 @@
-import{convertBoundingBoxToBox as s,transformBoxPoints as f}from"./sr-C2GHQZJJtQo1.js";import{translateAxis as n}from"./sr-DB-GvP3eh14H.js";function x(o,t){return s(f(o.getBoundingClientRect(),t))}function c(o,t,i){const r=x(o,i),{scroll:e}=t;return e&&(n(r.x,e.offset.x),n(r.y,e.offset.y)),r}export{c as measurePageBox,x as measureViewportBox};

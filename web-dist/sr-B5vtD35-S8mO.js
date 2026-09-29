@@ -1,1 +1,0 @@
-import{getInitializedFeatureDefinitions as o}from"./sr-gdRQ_9zUfUv1.js";import{setFeatureDefinitions as n}from"./sr-V_1_CjcQq3k3.js";function s(e){const i=o();for(const t in e)i[t]={...i[t],...e[t]};n(i)}export{s as loadFeatures};

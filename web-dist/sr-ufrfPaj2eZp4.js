@@ -1,1 +1,0 @@
-function o(n){return function(){return n}}export{o as default};

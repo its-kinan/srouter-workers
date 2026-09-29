@@ -1,1 +1,0 @@
-import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{isSVGComponent as m}from"./sr-CcpI1sd0josi.js";import{SVGVisualElement as o}from"./sr-C-ge3MVhwZKQ.js";import{HTMLVisualElement as i}from"./sr-CX27yNw3ifse.js";const c=(e,r)=>r.isSVG??m(e)?new o(r):new i(r,{allowProjection:e!==t.Fragment});export{c as createDomVisualElement};

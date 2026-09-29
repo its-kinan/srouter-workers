@@ -1,1 +1,0 @@
-import{r as e}from"./sr-BaQ6fH3cvQLq.js";function d({controlled:t,default:o,name:c,state:f="value"}){const{current:a}=e.useRef(t!==void 0),[s,u]=e.useState(o),l=a?t:s,n=e.useCallback(r=>{a||u(r)},[]);return[l,n]}export{d as useControlled};

@@ -1,1 +1,0 @@
-import{r as t}from"./sr-BaQ6fH3cvQLq.js";import{w as i}from"./sr-BLfgROzYknT2.js";function l(e,r){return e===r}function f(e,r,n=l){const c=t.useCallback(u=>{if(!e)return()=>{};const{unsubscribe:o}=e.subscribe(u);return o},[e]),s=t.useCallback(()=>e==null?void 0:e.get(),[e]);return i.useSyncExternalStoreWithSelector(c,s,s,r,n)}export{f as useStore};

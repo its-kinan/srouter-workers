@@ -1,1 +1,0 @@
-import{getStoreFactory as e}from"./sr-RNhVmrNuSPGp.js";import{RouterCore as t}from"./sr-bZ6MaiEXvFNd.js";var c=r=>new o(r),o=class extends t{constructor(r){super(r,e)}};export{o as Router,c as createRouter};

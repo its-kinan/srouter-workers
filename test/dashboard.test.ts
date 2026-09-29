@@ -3,7 +3,7 @@
 // real migrations, then exercises the contracts the React dashboard depends on.
 // Run: npm test
 
-import { describe, it, before } from "node:test";
+import { describe, it, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -15,8 +15,16 @@ import type { AddressInfo } from "node:net";
 import { app } from "../src/index.js";
 import type { Env } from "../src/env.js";
 import { getMergedModels } from "../src/routes/models.js";
-import { listAllModels, loadAccounts } from "../src/providers/registry.js";
+import {
+    listAllModels,
+    loadAccounts,
+    resetRegistryCachesForTests
+} from "../src/providers/registry.js";
 import { encryptSecretsObject } from "../src/crypto/secretbox.js";
+
+// The isolate-local account/version caches must not leak between tests:
+// each test mutates its own sqlite DB and expects immediate visibility.
+beforeEach(() => resetRegistryCachesForTests());
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 

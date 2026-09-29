@@ -84,6 +84,7 @@ async function refreshCodex(refreshToken: string, clientId: string): Promise<Ref
 }
 
 import { GrokCliOAuth } from "./oauth-flows.js";
+import { routerShardName } from "../router/durable.js";
 
 /**
  * Refresh an OAuth account's access token. Returns null when the provider
@@ -177,8 +178,9 @@ export async function ensureFreshToken(
         return currentAccessToken;
     }
 
-    // Acquire per-account refresh lock from the RouterState DO.
-    const stub = deps.ROUTER_STATE.getByName("router");
+    // Acquire per-account refresh lock from the account's provider RouterState
+    // shard (not the old global "router" name — shards are per provider).
+    const stub = deps.ROUTER_STATE.getByName(routerShardName(providerType));
     const lockRes = await stub.fetch(
         new Request("https://do/refresh/try", {
             method: "POST",

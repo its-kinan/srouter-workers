@@ -1,1 +1,0 @@
-const a="https://api.atria-asi.ai/v1",t={id:"atria",name:"Atria",category:"api_key",protocol:"openai",base_url:a,web_url:"https://api.atria-asi.ai/docs",alias:"atria",requires_api_key:!0,supports_custom_url:!0,status_message:"Atria API key missing"};export{a as ATRIA_BASE_URL,t as ATRIA_PROVIDER};

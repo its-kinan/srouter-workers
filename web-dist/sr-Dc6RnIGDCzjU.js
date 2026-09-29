@@ -1,1 +1,0 @@
-var a={allowDataOverflow:!1,allowDecimals:!1,allowDuplicatedCategory:!0,includeHidden:!1,radiusAxisId:0,reversed:!1,scale:"auto",tick:!0,tickCount:5,type:"auto"};export{a as defaultPolarRadiusAxisProps};

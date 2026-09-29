@@ -1,1 +1,0 @@
-const t=new Set(["when","delay","delayChildren","staggerChildren","staggerDirection","repeat","repeatType","repeatDelay","from","elapsed"]);function n(e){for(const r in e)if(!t.has(r))return!0;return!1}export{n as isTransitionDefined};

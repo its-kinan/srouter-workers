@@ -1,1 +1,0 @@
-const e={id:"openai_codex",name:"OpenAI Codex / ChatGPT",category:"oauth",protocol:"openai",alias:"openai",web_url:"https://chatgpt.com",requires_api_key:!1,requires_oauth:!0,status_message:"OAuth token missing"};export{e as OPENAI_CODEX_PROVIDER};

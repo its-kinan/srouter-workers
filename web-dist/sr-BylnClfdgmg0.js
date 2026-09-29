@@ -1,1 +1,0 @@
-import{r as i}from"./sr-BaQ6fH3cvQLq.js";import{setChartData as e}from"./sr-CnLgw6fry8xo.js";import{useAppDispatch as m}from"./sr-DOIGHjJMcPRw.js";import{useIsPanorama as p}from"./sr-4plVnZ3J4owS.js";var c=o=>{var a=o.chartData,r=m(),t=p();return i.useEffect(()=>t?()=>{}:(r(e(a)),()=>{r(e(void 0))}),[a,r,t]),null};export{c as ChartDataContextProvider};

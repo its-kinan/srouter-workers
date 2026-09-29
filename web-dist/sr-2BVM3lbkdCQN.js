@@ -1,1 +1,0 @@
-import{isMotionValue as y}from"./sr-BbIbbK3hx6Ih.js";import{isForcedMotionValue as u}from"./sr-DIqDDphW-3gv.js";function d(c,n,e){var r;const t=c.style,f=n==null?void 0:n.style,i={};if(!t)return i;for(const o in t)(y(t[o])||f&&y(f[o])||u(o,c)||((r=e==null?void 0:e.getValue(o))==null?void 0:r.liveStyle)!==void 0)&&(i[o]=t[o]);return i}export{d as scrapeMotionValuesFromProps};

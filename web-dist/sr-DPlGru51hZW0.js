@@ -1,1 +1,0 @@
-function f(r){r.persist();var u=r.currentTarget;return new Proxy(r,{get:(t,n)=>{if(n==="currentTarget")return u;var e=Reflect.get(t,n);return typeof e=="function"?e.bind(t):e}})}export{f as createEventProxy};

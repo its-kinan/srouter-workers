@@ -1,1 +1,0 @@
-import{createSlice as a}from"./sr-BFukgrR9AM1g.js";var e={x:0,y:0,width:0,height:0,padding:{top:0,right:0,bottom:0,left:0}},r=a({name:"brush",initialState:e,reducers:{setBrushSettings(i,t){return t.payload==null?e:t.payload}}});r.actions.setBrushSettings;var u=r.reducer;export{u as brushReducer,r as brushSlice};

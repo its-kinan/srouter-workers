@@ -1,1 +1,0 @@
-function t(i){for(let l=1;l<i.length;l++)i[l]??(i[l]=i[l-1])}export{t as fillWildcards};

@@ -1,1 +1,0 @@
-const n=(e,r,t)=>e+(r-e)*t;export{n as mixNumber};

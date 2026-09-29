@@ -38,6 +38,11 @@ new_sqlite_classes = ["RouterState"]
 [triggers]
 crons = ["* * * * *"]
 
+# Raise the CPU ceiling for the per-request routing work (cold-start decrypt
+# of 342 accounts briefly needs headroom; warm requests are unaffected).
+[limits]
+cpu_ms = 5000
+
 # --- Static assets: minimal Phase 1 dashboard shell in public/ ---
 [assets]
 directory = "./public"

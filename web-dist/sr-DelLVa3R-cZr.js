@@ -1,1 +1,0 @@
-function e(t,n){return n instanceof HTMLElement?"HTMLElement <".concat(n.tagName,' class="').concat(n.className,'">'):n===window?"global.window":t==="children"&&typeof n=="object"&&n!==null?"<<CHILDREN>>":n}export{e as reduxDevtoolsJsonStringifyReplacer};

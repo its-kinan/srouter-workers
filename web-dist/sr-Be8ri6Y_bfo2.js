@@ -1,1 +1,0 @@
-function t(i){if(i)return{x:i.x,y:i.y,upperWidth:"upperWidth"in i?i.upperWidth:i.width,lowerWidth:"lowerWidth"in i?i.lowerWidth:i.width,width:i.width,height:i.height}}export{t as cartesianViewBoxToTrapezoid};

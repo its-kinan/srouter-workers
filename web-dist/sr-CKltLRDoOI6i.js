@@ -1,1 +1,0 @@
-import e from"./sr-DbCXVGTeA_lX.js";import{r as o}from"./sr-BaQ6fH3cvQLq.js";const r=o.createContext(null);function s(){const t=o.useContext(r);if(t===null)throw new Error(e(60));return t}export{r as SelectRootContext,s as useSelectRootContext};

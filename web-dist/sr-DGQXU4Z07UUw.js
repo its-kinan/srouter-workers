@@ -1,1 +1,0 @@
-import{childMatcher as i}from"./sr-CcpOXQphYiwT.js";var n=Array.prototype.find;function r(t){return function(){return n.call(this.children,t)}}function e(){return this.firstElementChild}function o(t){return this.select(t==null?e:r(typeof t=="function"?t:i(t)))}export{o as default};

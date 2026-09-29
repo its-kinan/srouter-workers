@@ -1,1 +1,0 @@
-import{complex as e}from"./sr-DuslXiQiYNkO.js";const n={...e,getAnimatableNone:o=>{const t=e.parse(o);return e.createTransformer(o)(t.map(r=>typeof r=="number"?0:typeof r=="object"?{...r,alpha:1}:r))}};export{n as mask};

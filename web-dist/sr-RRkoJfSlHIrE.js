@@ -1,1 +1,0 @@
-import{createSelector as r}from"./sr-B5wKPfy43Tya.js";var t=r(e=>e.cartesianAxis.xAxis,e=>Object.values(e)),a=r(e=>e.cartesianAxis.yAxis,e=>Object.values(e));export{t as selectAllXAxes,a as selectAllYAxes};

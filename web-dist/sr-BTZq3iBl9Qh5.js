@@ -1,1 +1,0 @@
-import{isWellBehavedNumber as n}from"./sr-kaqq4GXsHxkZ.js";function d(e,r){return e&&typeof e=="object"&&"zIndex"in e&&typeof e.zIndex=="number"&&n(e.zIndex)?e.zIndex:r}export{d as getZIndexFromUnknown};

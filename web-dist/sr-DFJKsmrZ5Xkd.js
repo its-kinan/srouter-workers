@@ -1,1 +1,0 @@
-const e={id:"kiro",name:"Kiro",category:"api_key",protocol:"custom",web_url:"https://aws.amazon.com/q/",requires_api_key:!0,supports_custom_url:!0,status_message:"Kiro credential missing"};export{e as KIRO_PROVIDER};

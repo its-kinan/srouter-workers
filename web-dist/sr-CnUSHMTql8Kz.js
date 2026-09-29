@@ -1,1 +1,0 @@
-import{object as a,boolean as t,string as e,number as r,literal as o,array as l}from"./sr-DPOc-sGwAT2y.js";const s=a({id:e(),object:o("model"),created:r().optional(),owned_by:e(),custom:t().optional()});a({object:o("list"),data:l(s)});export{s as ModelObjectSchema};

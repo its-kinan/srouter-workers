@@ -1,1 +1,0 @@
-function t(r){return typeof r=="string"||Array.isArray(r)}export{t as isVariantLabel};

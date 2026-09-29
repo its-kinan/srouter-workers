@@ -1,1 +1,0 @@
-var i=(v,e,g)=>{var t,c=r=>{var u=e.tick(r);if(e.getState()==="active"){if(g(e.getInterpolated()),e.getProgress()===1){e.complete(),t=void 0;return}t=v.setTimeout(c,u);return}t=v.setTimeout(c,u)};return t=v.setTimeout(c,0),()=>{var r;return(r=t)===null||r===void 0?void 0:r()}};export{i as animationControllerImpl};

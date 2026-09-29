@@ -1,14 +1,19 @@
 // Tests for fallback combo routing (src/routing/fallback.ts).
-import { describe, it } from "node:test";
+import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
     extractStatusCode,
+    invalidateFallbackRulesCache,
     resolveCandidates,
     runCandidateAttempts,
     shouldTriggerFallback,
     type AttemptTracker,
     type FallbackRule
 } from "../src/routing/fallback.js";
+
+// The isolate-local rules cache must not leak between tests (each test gets
+// its own fakeDb with different rows).
+beforeEach(() => invalidateFallbackRulesCache());
 
 function rule(over: Partial<FallbackRule> = {}): FallbackRule {
     return {

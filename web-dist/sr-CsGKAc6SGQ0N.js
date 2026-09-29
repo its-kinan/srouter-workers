@@ -1,1 +1,0 @@
-import{set as i}from"./sr-DgNzgDIYDz_b.js";function e(t,n){return function(){var r=n.apply(this,arguments);if(typeof r!="function")throw new Error;i(this,t).ease=r}}function a(t){if(typeof t!="function")throw new Error;return this.each(e(this._id,t))}export{a as default};

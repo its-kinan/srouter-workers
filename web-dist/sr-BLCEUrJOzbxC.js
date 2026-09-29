@@ -1,1 +1,0 @@
-import{complex as m}from"./sr-DuslXiQiYNkO.js";import{filter as n}from"./sr-6uFhCQGiuhWz.js";import{mask as a}from"./sr-5W1XIraE9SLF.js";import{getDefaultValueType as r}from"./sr-BxyI3yWaBsx3.js";const i=new Set([n,a]);function s(t,o){let e=r(t);return i.has(e)||(e=m),e.getAnimatableNone?e.getAnimatableNone(o):void 0}export{s as getAnimatableNone};

@@ -105,6 +105,22 @@ export async function refreshCatalogIfStale(env: Env): Promise<void> {
 const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
+// --- Isolate-local catalog cache ---
+// getModelCatalog() is called once per chat-completion request and used to do
+// a DO GET /models + a full JSON.parse of the aggregated catalog (all models
+// across ~342 accounts) every time. The SWR semantics already tolerate
+// staleness (DO TTL is 5 min), so a 60s isolate TTL is strictly fresher than
+// what the DO serves and eliminates the per-request subrequest + parse.
+const ISOLATE_CATALOG_TTL_MS = 60_000;
+
+interface IsolateCatalogEntry {
+    models: ModelObject[];
+    cachedAt: number | null;
+    fetchedAt: number;
+}
+
+let isolateCatalog: IsolateCatalogEntry | null = null;
+
 /**
  * Stale-while-revalidate catalog read for the request path.
  *
@@ -117,13 +133,22 @@ export async function getModelCatalog(
     env: Env,
     executionCtx?: { waitUntil(p: Promise<unknown>): void }
 ): Promise<ModelObject[] | null> {
+    // Isolate cache first: one DO round-trip + large JSON.parse saved per request.
+    const now = Date.now();
+    if (isolateCatalog && now - isolateCatalog.fetchedAt < ISOLATE_CATALOG_TTL_MS) {
+        return isolateCatalog.models;
+    }
+
     const { models, cachedAt } = await readCatalog(env);
     const fresh =
         models !== null &&
         models.length > 0 &&
         cachedAt !== null &&
-        Date.now() - cachedAt < MODEL_CACHE_TTL_MS;
-    if (fresh) return models;
+        now - cachedAt < MODEL_CACHE_TTL_MS;
+    if (fresh) {
+        isolateCatalog = { models, cachedAt, fetchedAt: now };
+        return models;
+    }
 
     if (models === null || models.length === 0) {
         // Cold start: no data at all. Single-flight one inline build so the
@@ -140,6 +165,7 @@ export async function getModelCatalog(
                             body: JSON.stringify({ models: built })
                         })
                     );
+                    isolateCatalog = { models: built, cachedAt: Date.now(), fetchedAt: Date.now() };
                     return built;
                 }
             } catch (err) {
@@ -155,12 +181,22 @@ export async function getModelCatalog(
         while (Date.now() < deadline) {
             await sleep(250);
             const retry = await readCatalog(env);
-            if (retry.models && retry.models.length > 0) return retry.models;
+            if (retry.models && retry.models.length > 0) {
+                isolateCatalog = {
+                    models: retry.models,
+                    cachedAt: retry.cachedAt,
+                    fetchedAt: Date.now()
+                };
+                return retry.models;
+            }
         }
         return null;
     }
 
     // Stale: serve it, rebuild in the background (single-flighted inside).
+    // Populate the isolate cache too, so the next ~60s of requests skip the
+    // DO round-trip while the background rebuild refreshes the DO copy.
+    isolateCatalog = { models, cachedAt, fetchedAt: Date.now() };
     if (executionCtx) {
         executionCtx.waitUntil(rebuildModelCatalog(env));
     } else {

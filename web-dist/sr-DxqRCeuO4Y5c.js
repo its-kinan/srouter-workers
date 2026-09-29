@@ -1,1 +1,0 @@
-function l(e,{sourceEvent:u,target:r,transform:t,dispatch:a}){Object.defineProperties(this,{type:{value:e,enumerable:!0,configurable:!0},sourceEvent:{value:u,enumerable:!0,configurable:!0},target:{value:r,enumerable:!0,configurable:!0},transform:{value:t,enumerable:!0,configurable:!0},_:{value:a}})}export{l as default};

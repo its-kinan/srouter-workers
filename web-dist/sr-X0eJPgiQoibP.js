@@ -1,1 +1,0 @@
-import{timeInterval as n}from"./sr-CB_Lajan2edd.js";import{durationSecond as o}from"./sr-DWcQ26qYpf41.js";const t=n(e=>{e.setTime(e-e.getMilliseconds())},(e,r)=>{e.setTime(+e+r*o)},(e,r)=>(r-e)/o,e=>e.getUTCSeconds());t.range;export{t as second};

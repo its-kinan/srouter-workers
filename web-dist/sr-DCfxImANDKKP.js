@@ -1,1 +1,0 @@
-import{supportsLinearEasing as a}from"./sr-YchJKdWaDh1u.js";import{isGenerator as t}from"./sr-Cp_znv5tcVnL.js";function i({type:e,...r}){return t(e)&&a()?e.applyToOptions(r):(r.duration??(r.duration=300),r.ease??(r.ease="easeOut"),r)}export{i as applyGeneratorOptions};

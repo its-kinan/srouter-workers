@@ -1,1 +1,0 @@
-const a=(r,t,o)=>{const e=t-r;return((o-r)%e+e)%e+r};export{a as wrap};

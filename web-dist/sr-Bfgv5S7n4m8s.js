@@ -1,1 +1,0 @@
-import{r}from"./sr-BaQ6fH3cvQLq.js";import"./sr-BA3axRHy0uMV.js";function t(){let e=!1;return{clearReset:()=>{e=!1},reset:()=>{e=!0},isReset:()=>e}}var s=r.createContext(t()),u=()=>r.useContext(s);export{u as useQueryErrorResetBoundary};

@@ -1,1 +1,0 @@
-import{isNan as i}from"./sr-Bi642uW1naG8.js";var v=(n,u)=>{var r,e=Number(u);if(!(i(e)||u==null))return e>=0?n==null||(r=n[e])===null||r===void 0?void 0:r.value:void 0};export{v as combineActiveLabel};

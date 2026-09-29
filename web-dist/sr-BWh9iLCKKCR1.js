@@ -1,1 +1,0 @@
-import"./sr-G4xFX4JxizRk.js";import"./sr-2SLqcGK6tdz-.js";import"./sr-BEph-fr7423Q.js";import"./sr-B33VJN8VC8nV.js";import{KNOWN_PROVIDERS as e}from"./sr-QIAz9BMCpZkP.js";const i=Object.freeze(e.map(({alias:r,...t})=>t));Object.freeze(Object.fromEntries(i.map(r=>[r.id,r])));export{i as DEFAULT_PROVIDERS};

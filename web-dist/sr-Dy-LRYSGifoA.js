@@ -1,1 +1,0 @@
-import u from"./sr-CvnyRSOqFTBX.js";function l(t){var r;return t===0?r=1:r=Math.floor(new u(t).abs().log(10).toNumber())+1,r}function m(t,r,i){for(var e=new u(t),n=0,o=[];e.lt(r)&&n<1e5;)o.push(e.toNumber()),e=e.add(i),n++;return o}export{l as getDigitCount,m as rangeStep};

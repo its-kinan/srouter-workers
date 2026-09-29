@@ -1,1 +1,0 @@
-import{useMatch as c}from"./sr-B6Xom051h3FE.js";function u(r){return c({from:r.from,strict:r.strict,shouldThrow:r.shouldThrow,structuralSharing:r.structuralSharing,select:e=>r.select?r.select(e.search):e.search})}export{u as useSearch};

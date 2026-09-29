@@ -1,1 +1,0 @@
-const e="https://api.commandcode.ai/alpha/generate",o={id:"commandcode",name:"Command Code",category:"api_key",protocol:"openai",base_url:e,web_url:"https://commandcode.ai",requires_api_key:!0,supports_custom_url:!0,status_message:"Command Code API key missing"};export{e as COMMANDCODE_BASE_URL,o as COMMANDCODE_PROVIDER};

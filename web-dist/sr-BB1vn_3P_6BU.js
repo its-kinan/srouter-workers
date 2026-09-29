@@ -1,1 +1,0 @@
-import{flatten as s}from"./sr-BVKE7f4JHIWk.js";import{isIterateeCall as n}from"./sr-C1xPV9_a2KaT.js";import{orderBy as l}from"./sr-Xj3ce4Suh29q.js";function h(f,...o){const m=o.length;return m>1&&n(f,o[0],o[1])?o=[]:m>2&&n(o[0],o[1],o[2])&&(o=[o[0]]),l(f,s(o),["asc"])}export{h as sortBy};

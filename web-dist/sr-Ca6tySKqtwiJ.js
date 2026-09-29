@@ -1,1 +1,0 @@
-import{r as s}from"./sr-BaQ6fH3cvQLq.js";function o(r){const[t,e]=s.useState({current:r,previous:null});return Object.is(r,t.current)||e({current:r,previous:t.current}),t.previous}export{o as usePreviousValue};

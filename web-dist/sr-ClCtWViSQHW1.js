@@ -1,1 +1,0 @@
-function u(r){return typeof r=="symbol"?1:r===null?2:r===void 0?3:r!==r?4:0}const f=(r,t,e)=>{if(r!==t){const i=u(r),n=u(t);if(i===n&&i===0){if(r<t)return e==="desc"?1:-1;if(r>t)return e==="desc"?-1:1}return e==="desc"?n-i:i-n}return 0};export{f as compareValues};

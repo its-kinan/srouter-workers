@@ -1,1 +1,0 @@
-import{NOOP as i}from"./sr-DuCe-TBEUl3O.js";let n=0;function s(e,o={}){const{preventScroll:u=!1,sync:a=!1,shouldFocus:t}=o;cancelAnimationFrame(n);function c(){t&&!t()||e==null||e.focus({preventScroll:u})}if(a)return c(),i;const r=requestAnimationFrame(c);return n=r,()=>{n===r&&(cancelAnimationFrame(r),n=0)}}export{s as enqueueFocus};

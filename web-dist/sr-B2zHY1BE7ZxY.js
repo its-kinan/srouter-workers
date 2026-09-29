@@ -1,1 +1,0 @@
-import{createSelector as l}from"./sr-B5wKPfy43Tya.js";import{sortBy as o}from"./sr-BB1vn_3P_6BU.js";var d=e=>e.legend.settings,i=e=>e.legend.size,n=e=>e.legend.payload,c=l([n,d],(e,a)=>{var r=a.itemSorter,t=e.flat(1);return r?o(t,r):t});export{c as selectLegendPayload,d as selectLegendSettings,i as selectLegendSize};

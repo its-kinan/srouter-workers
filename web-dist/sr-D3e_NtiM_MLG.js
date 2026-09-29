@@ -1,1 +1,0 @@
-import{toFinite as m}from"./sr-D95LlbC_v3uU.js";import{isIterateeCall as n}from"./sr-C1xPV9_a2KaT.js";function v(o,f,i){i&&typeof i!="number"&&n(o,f,i)&&(f=i=void 0),o=m(o),f===void 0?(f=o,o=0):f=m(f),i=i===void 0?o<f?1:-1:m(i);const r=Math.max(Math.ceil((f-o)/(i||1)),0),c=new Array(r);for(let l=0;l<r;l++)c[l]=o,o+=i;return c}export{v as range};

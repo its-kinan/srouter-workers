@@ -1,1 +1,0 @@
-import{r as e}from"./sr-BaQ6fH3cvQLq.js";import{animationControllerImpl as n}from"./sr-ZqZkV-bhNoSI.js";var r=e.createContext(n);r.Provider;function x(t){var o=e.useContext(r);return e.useMemo(()=>t??o,[t,o])}export{x as useAnimationController};

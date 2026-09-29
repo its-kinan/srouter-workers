@@ -1,1 +1,0 @@
-import e from"./sr-DbCXVGTeA_lX.js";import{r as t}from"./sr-BaQ6fH3cvQLq.js";const n=t.createContext(void 0);function m(r=!1){const o=t.useContext(n);if(o===void 0&&!r)throw new Error(e(16));return o}export{n as CompositeRootContext,m as useCompositeRootContext};

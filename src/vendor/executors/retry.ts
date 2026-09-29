@@ -126,6 +126,8 @@ export async function fetchWithRetry(
     budget?: RequestAttemptBudget
 ): Promise<Response> {
     let lastResponse: Response | undefined;
+    // Serialize once: the body never changes between attempts.
+    const bodyText = JSON.stringify(body);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (budget && budget.remaining <= 0) {
             return (
@@ -137,7 +139,7 @@ export async function fetchWithRetry(
         const res = await fetch(url, {
             method: "POST",
             headers,
-            body: JSON.stringify(body)
+            body: bodyText
         });
         lastResponse = res;
 

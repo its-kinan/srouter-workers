@@ -1,1 +1,0 @@
-const s=t=>t.startsWith("--");export{s as isCSSVar};

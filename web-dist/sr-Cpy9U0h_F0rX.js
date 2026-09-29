@@ -1,1 +1,0 @@
-const e=t=>/^0[^.\s]+$/u.test(t);export{e as isZeroValueString};

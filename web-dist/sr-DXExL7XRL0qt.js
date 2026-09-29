@@ -1,1 +1,0 @@
-import{isCSSVar as s}from"./sr-DEQnrIKdomks.js";function i(r,t,o){s(t)?r.style.setProperty(t,o):r.style[t]=o}export{i as setStyle};

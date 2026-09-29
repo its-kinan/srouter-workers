@@ -1,1 +1,0 @@
-import{time as s}from"./sr-BEGhKJX-ADwG.js";import{frame as m,cancelFrame as o}from"./sr-Bb_f7HUDDFq8.js";function i(c,r){const n=s.now(),e=({timestamp:a})=>{const t=a-n;t>=r&&(o(e),c(t-r))};return m.setup(e,!0),()=>o(e)}export{i as delay};

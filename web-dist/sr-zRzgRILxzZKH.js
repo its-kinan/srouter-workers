@@ -1,1 +1,0 @@
-import{compareByDepth as t}from"./sr-CVwA1XrkdiOI.js";import{addUniqueItem as r,removeItem as e}from"./sr-Ue28wz9uGRRG.js";class c{constructor(){this.children=[],this.isDirty=!1}add(i){r(this.children,i),this.isDirty=!0}remove(i){e(this.children,i),this.isDirty=!0}forEach(i){this.isDirty&&this.children.sort(t),this.isDirty=!1,this.children.forEach(i)}}export{c as FlatTree};

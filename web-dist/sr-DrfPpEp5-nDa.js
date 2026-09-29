@@ -1,1 +1,0 @@
-import r from"./sr-DbCXVGTeA_lX.js";import{r as t}from"./sr-BaQ6fH3cvQLq.js";const e=t.createContext(void 0);function c(){const o=t.useContext(e);if(o===void 0)throw new Error(r(14));return o}export{e as CheckboxRootContext,c as useCheckboxRootContext};

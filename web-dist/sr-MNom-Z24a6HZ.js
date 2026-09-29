@@ -1,1 +1,0 @@
-const s=o=>typeof o=="string"&&o.toLowerCase()==="svg";export{s as isSVGTag};

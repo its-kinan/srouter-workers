@@ -1,1 +1,0 @@
-import{circInOut as r}from"./sr-79_gau_-Llnr.js";import{backInOut as t}from"./sr-B3I4KcnKXDGM.js";import{anticipate as o}from"./sr-C-WlulCMHCzH.js";const n={anticipate:o,backInOut:t,circInOut:r};function p(e){return e in n}function u(e){typeof e.ease=="string"&&p(e.ease)&&(e.ease=n[e.ease])}export{u as replaceStringEasing};

@@ -1,1 +1,0 @@
-var W=i=>{var r=i.ticks,t=i.label,k=i.labelGapWithTick,d=k,e=i.tickSize,h=e===void 0?0:e,c=i.tickMargin,v=c===void 0?0:c,a=0;if(r){Array.from(r).forEach(l=>{if(l){var n=l.getBoundingClientRect();n.width>a&&(a=n.width)}});var g=t?t.getBoundingClientRect().width:0,o=h+v,u=a+o+g+(t?d:0);return Math.round(u)}return 0};export{W as getCalculatedYAxisWidth};

@@ -1,1 +1,0 @@
-const i={style:{transition:"none"}},n="data-base-ui-click-trigger",t={fallbackAxisSide:"none"},e={fallbackAxisSide:"end"},I={clipPath:"inset(50%)",position:"fixed",top:0,left:0};export{n as CLICK_TRIGGER_IDENTIFIER,i as DISABLED_TRANSITIONS_STYLE,t as DROPDOWN_COLLISION_AVOIDANCE,e as POPUP_COLLISION_AVOIDANCE,I as ownerVisuallyHidden};
